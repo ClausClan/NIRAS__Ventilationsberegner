@@ -314,7 +314,7 @@
 
             <div id="dimensioning" class="tab-content"></div>
             <div id="fittings" class="tab-content hidden"></div>
-            <div id="system" class="tab-content hidden">
+            <div id="system" class="tab-content hidden"></div>/
         <section>
             <h2>Systemberegning</h2>
             
@@ -455,15 +455,30 @@
         }
 
         // --- UI INITIALIZATION & LOGIC ---
-        function initializeApp() {
+       function initializeApp() {
+            // Inject HTML for all tabs
             document.getElementById('dimensioning').innerHTML = getDimFormHtml();
             document.getElementById('fittings').innerHTML = getFittingsFormHtml();
+            document.getElementById('system').innerHTML = getSystemFormHtml(); // Added this line
+        
+            // Get elements for Dimensioning tab
             ventilationForm = document.getElementById('ventilationForm');
+            dimResultsContainer = document.getElementById('dim_resultsContainer');
+            
+            // Get elements for Fittings tab
             fittingsForm = document.getElementById('fittingsForm');
             fittingTypeSelect = document.getElementById('fittingType');
             fittingInputsContainer = document.getElementById('fittingInputsContainer');
-            dimResultsContainer = document.getElementById('dim_resultsContainer');
             fittingsResultsContainer = document.getElementById('fittings_resultsContainer');
+        
+            // Get elements for System tab
+            systemAddComponentForm = document.getElementById('systemAddComponentForm');
+            systemComponentTypeSelect = document.getElementById('systemComponentType');
+            systemComponentInputsContainer = document.getElementById('systemComponentInputsContainer');
+            systemComponentsContainer = document.getElementById('systemComponentsContainer');
+            totalPressureDropContainer = document.getElementById('totalPressureDropContainer');
+            
+            // General UI elements
             tabs = document.querySelectorAll('.tab-link');
             contents = document.querySelectorAll('.tab-content');
             themeToggle = document.getElementById('themeToggle');
@@ -471,15 +486,8 @@
             helpModal = document.getElementById('helpModal');
             modalTitle = detailsModal.querySelector('#modalTitle');
             modalBody = detailsModal.querySelector('#modalBody');
-                systemAddComponentForm = document.getElementById('systemAddComponentForm');
-                systemComponentTypeSelect = document.getElementById('systemComponentType');
-                systemComponentInputsContainer = document.getElementById('systemComponentInputsContainer');
-                systemComponentsContainer = document.getElementById('systemComponentsContainer');
-                totalPressureDropContainer = document.getElementById('totalPressureDropContainer');
-                systemComponentTypeSelect.addEventListener('change', handleComponentTypeChange);
-                systemAddComponentForm.addEventListener('submit', handleAddComponent);
-
-
+        
+            // Setup event listeners
             populateDatalists();
             updateDimUI();
             updateConstraintDefaults();
@@ -490,38 +498,38 @@
                     contents.forEach(c => c.classList.add('hidden'));
                     tab.classList.add('active');
                     document.getElementById(tab.dataset.tab).classList.remove('hidden');
-                    dimResultsContainer.innerHTML = ''; fittingsResultsContainer.innerHTML = '';
                 });
             });
+        
             document.getElementsByName('calculationMode').forEach(r => r.addEventListener('change', updateDimUI));
             document.getElementsByName('ductShape').forEach(r => r.addEventListener('change', updateDimUI));
             document.getElementById('constraintType').addEventListener('change', updateConstraintDefaults);
-            fittingTypeSelect.addEventListener('change', renderFittingInputs);
+            
             ventilationForm.addEventListener('submit', handleDuctCalculation);
             fittingsForm.addEventListener('submit', handleFittingCalculation);
+            fittingTypeSelect.addEventListener('change', renderFittingInputs);
+        
+            systemComponentTypeSelect.addEventListener('change', handleComponentTypeChange);
+            systemAddComponentForm.addEventListener('submit', handleAddComponent);
             
             themeToggle.addEventListener('change', (e) => {
                 const theme = e.target.checked ? 'dark' : 'light';
                 document.documentElement.setAttribute('data-theme', theme);
                 localStorage.setItem('theme', theme);
             });
-
-            const helpBtn = document.getElementById('helpBtn');
-            helpBtn.onclick = () => showHelpModal();
-
-            const detailsModalClose = detailsModal.querySelector('.close-button');
-            detailsModalClose.onclick = () => { detailsModal.style.display = "none"; };
-
+        
+            document.getElementById('helpBtn').onclick = () => showHelpModal();
+            detailsModal.querySelector('.close-button').onclick = () => { detailsModal.style.display = "none"; };
+        
             window.onclick = (event) => { 
                 if (event.target == detailsModal) { detailsModal.style.display = "none"; }
                 if (event.target == helpModal) { helpModal.style.display = "none"; }
             };
-
+        
             const savedTheme = localStorage.getItem('theme') || 'dark';
             document.documentElement.setAttribute('data-theme', savedTheme);
             themeToggle.checked = savedTheme === 'dark';
         }
-
         function updateDimUI() {
             const mode = document.querySelector('input[name="calculationMode"]:checked').value;
             const shape = document.querySelector('input[name="ductShape"]:checked').value;
@@ -1118,7 +1126,7 @@ function renderSystemFittingInputs() {
 function handleAddComponent(event) {
     event.preventDefault();
     const componentType = systemComponentTypeSelect.value;
-    
+
     const airflow = parseLocalFloat(document.getElementById('system_airflow').value);
     const temp = parseLocalFloat(document.getElementById('temperature').value);
     if (isNaN(airflow) || isNaN(temp) || airflow <= 0) {
@@ -1130,71 +1138,51 @@ function handleAddComponent(event) {
 
     let newComponent = { id: Date.now(), airflow: airflow };
 
-    if (componentType === 'straightDuct') {
-        const length = parseLocalFloat(document.getElementById('ductLength').value);
-        if (isNaN(length) || length <= 0) {
-            alert('Udfyld venligst Længde korrekt.'); return;
-        }
+    try {
+        if (componentType === 'straightDuct') {
+            const length = parseLocalFloat(document.getElementById('ductLength').value);
+            if (isNaN(length) || length <= 0) { alert('Udfyld venligst Længde korrekt.'); return; }
+            
+            const shape = document.querySelector('input[name="sysDuctShape"]:checked').value;
+            let performance, name, details;
 
-        const shape = document.querySelector('input[name="sysDuctShape"]:checked').value;
-        let performance, name, details;
+            if (shape === 'round') {
+                const diameter = parseLocalFloat(document.getElementById('ductDiameter').value);
+                performance = getPerformance(Q, diameter / 1000, { shape: 'round' }, RHO, NU);
+                name = `Lige Kanal Ø${diameter}`;
+                details = `${length}m`;
+            } else {
+                const sideA = parseLocalFloat(document.getElementById('ductSideA').value);
+                const sideB = parseLocalFloat(document.getElementById('ductSideB').value);
+                performance = getPerformance(Q, 0, { shape: 'rect', a: sideA, b: sideB }, RHO, NU);
+                name = `Lige Kanal ${sideA}x${sideB}`;
+                details = `${length}m`;
+            }
+            newComponent = { ...newComponent, type: 'straightDuct', name, details, velocity: performance.velocity, pressureLoss: performance.pressureDrop * length, calculationDetails: { ...performance, length: length, RHO: RHO } };
 
-        if (shape === 'round') {
-            const diameter = parseLocalFloat(document.getElementById('ductDiameter').value);
-            performance = getPerformance(Q, diameter / 1000, { shape: 'round' }, RHO, NU);
-            name = `Lige Kanal Ø${diameter}`;
-            details = `${length}m`;
-        } else {
-            const sideA = parseLocalFloat(document.getElementById('ductSideA').value);
-            const sideB = parseLocalFloat(document.getElementById('ductSideB').value);
-            performance = getPerformance(Q, 0, { shape: 'rect', a: sideA, b: sideB }, RHO, NU);
-            name = `Lige Kanal ${sideA}x${sideB}`;
-            details = `${length}m`;
-        }
+        } else if (componentType === 'manualLoss') {
+            const name = document.getElementById('manualLossName').value || 'Manuelt Tab';
+            const pressureLoss = parseLocalFloat(document.getElementById('manualLossValue').value);
+            if (isNaN(pressureLoss)) { alert('Indtast venligst et gyldigt tryktab.'); return; }
+            newComponent = { ...newComponent, type: 'manualLoss', name, details: '', velocity: null, pressureLoss: pressureLoss, calculationDetails: null };
 
-        newComponent = {
-            ...newComponent,
-            type: 'straightDuct',
-            name: name,
-            details: details,
-            velocity: performance.velocity,
-            pressureLoss: performance.pressureDrop * length,
-            calculationDetails: { ...performance, length: length, RHO: RHO } // <-- Save details here
-        };
+        } else if (componentType === 'fitting') {
+            const fittingType = document.getElementById('systemFittingType').value;
+            if (!fittingType) { alert('Vælg venligst en type formstykke.'); return; }
 
-    } else if (componentType === 'manualLoss') {
-        const name = document.getElementById('manualLossName').value || 'Manuelt Tab';
-        const pressureLoss = parseLocalFloat(document.getElementById('manualLossValue').value);
-        if (isNaN(pressureLoss)) {
-            alert('Indtast venligst et gyldigt tryktab.'); return;
-        }
+            let name, details, velocity, pressureLoss, calculationDetails;
+            let zeta, A, v, Pdyn_Pa;
 
-        newComponent = {
-            ...newComponent,
-            type: 'manualLoss',
-            name: name,
-            details: '',
-            velocity: null,
-            pressureLoss: pressureLoss,
-            calculationDetails: null // No details for manual loss
-        };
-        else if (componentType === 'fitting') {
-        const fittingType = document.getElementById('systemFittingType').value;
-        if (!fittingType) { alert('Vælg venligst en type formstykke.'); return; }
-
-        let name, details, velocity, pressureLoss, calculationDetails;
-
-        try {
             switch(fittingType) {
                 case 'bend_circ':
                     const d = parseLocalFloat(document.getElementById('sys_d').value);
                     const angle = parseLocalFloat(document.getElementById('sys_angle').value);
                     const rd = parseLocalFloat(document.getElementById('sys_rd').value);
                     const rd_key = rd < 1.25 ? "rd1_0" : "rd1_5";
-                    const zeta = interpolateValue(angle, d, CIRCULAR_BEND_ZETA[rd_key]);
-                    const A = Math.PI * (getInternalDim(d)/2000)**2;
-                    const v = Q/A;
-                    const Pdyn_Pa = (RHO / 2) * v ** 2;
+                    zeta = interpolateValue(angle, d, CIRCULAR_BEND_ZETA[rd_key]);
+                    A = Math.PI * (getInternalDim(d)/2000)**2;
+                    v = Q/A;
+                    Pdyn_Pa = (RHO / 2) * v ** 2;
                     pressureLoss = zeta * Pdyn_Pa;
                     
                     name = `Bøjning Cirk. Ø${d}`;
@@ -1210,71 +1198,63 @@ function handleAddComponent(event) {
                     const rh = parseLocalFloat(document.getElementById('sys_rh').value);
                     const zeta_base = interpolateValue(h/w, rh, RECTANGULAR_BEND_ZETA.mainTable);
                     const k_factor = interpolateValue(angle_r, null, RECTANGULAR_BEND_ZETA.kFactor);
-                    const zeta_rect = zeta_base * k_factor;
+                    zeta = zeta_base * k_factor;
                     let h_int = getInternalDim(h)/1000, w_int = getInternalDim(w)/1000;
                     const d_hyd = (2 * h_int * w_int) / (h_int + w_int);
-                    const A_rect = Math.PI * (d_hyd/2)**2;
-                    const v_rect = Q/A_rect;
-                    const Pdyn_Pa_rect = (RHO / 2) * v_rect ** 2;
-                    pressureLoss = zeta_rect * Pdyn_Pa_rect;
+                    A = Math.PI * (d_hyd/2)**2;
+                    v = Q/A;
+                    Pdyn_Pa = (RHO / 2) * v ** 2;
+                    pressureLoss = zeta * Pdyn_Pa;
 
                     name = `Bøjning Rekt. ${h}x${w}`;
                     details = `${angle_r}° R/H=${rh}`;
-                    velocity = v_rect;
-                    calculationDetails = { type: fittingType, A_m2: A_rect, v_ms: v_rect, zeta: zeta_rect, Pdyn_Pa: Pdyn_Pa_rect };
+                    velocity = v;
+                    calculationDetails = { type: fittingType, A_m2: A, v_ms: v, zeta: zeta, Pdyn_Pa: Pdyn_Pa };
                     break;
                 
-                    case 'tee_sym':
-                    case 'tee_asym':
-                    const q_in = parseLocalFloat(document.getElementById('sys_tee_q_in').value);
-                    const q_straight = parseLocalFloat(document.getElementById('sys_tee_q_straight').value);
-                    const q_branch = parseLocalFloat(document.getElementById('sys_tee_q_branch').value);
+                case 'expansion':
+                    const d1_exp = parseLocalFloat(document.getElementById('sys_d1').value);
+                    const d2_exp = parseLocalFloat(document.getElementById('sys_d2').value);
+                    const angle_exp = parseLocalFloat(document.getElementById('sys_angle_dim').value);
+                    const A1_exp = Math.PI * (getInternalDim(d1_exp)/2000)**2;
+                    const A2_exp = Math.PI * (getInternalDim(d2_exp)/2000)**2;
+                    zeta = interpolateValue(angle_exp, A2_exp/A1_exp, EXPANSION_ZETA);
+                    v = Q/A1_exp; // Use inlet velocity
+                    Pdyn_Pa = (RHO / 2) * v ** 2;
+                    pressureLoss = zeta * Pdyn_Pa;
                     
-                    if (Math.abs(q_in - (q_straight + q_branch)) > 1) {
-                        alert("Luftmængderne for T-stykket stemmer ikke overens (Ind ≈ Ligeud + Afgrening)."); return;
-                    }
-                    
-                    const isSymTee = fittingType === 'tee_sym';
-                    const d_in = parseLocalFloat(document.getElementById('sys_tee_d_in').value);
-                    const d_straight = isSymTee ? d_in : parseLocalFloat(document.getElementById('sys_tee_d_straight').value);
-                    const d_branch = isSymTee ? d_in : parseLocalFloat(document.getElementById('sys_tee_d_branch').value);
-
-                    const teeResults = calculateTeePressureLoss({q_in, q_straight, q_branch}, {d_in, d_straight, d_branch}, RHO);
-                    
-                    const chosenPath = document.querySelector('input[name="sysTeePath"]:checked').value;
-                    let newAirflow;
-
-                    if (chosenPath === 'straight') {
-                        pressureLoss = teeResults.loss_straight;
-                        velocity = teeResults.details_straight.v_ms;
-                        calculationDetails = { ...teeResults.details_straight, type: fittingType, chosenPath: 'Ligeud' };
-                        newAirflow = q_straight;
-                        name = `T-stykke (Ligeud)`;
-                        details = `q=${q_straight} m³/h`;
-                    } else { // branch
-                        pressureLoss = teeResults.loss_branch;
-                        velocity = teeResults.details_branch.v_ms;
-                        calculationDetails = { ...teeResults.details_branch, type: fittingType, chosenPath: 'Afgrening' };
-                        newAirflow = q_branch;
-                        name = `T-stykke (Afgrening)`;
-                        details = `q=${q_branch} m³/h`;
-                    }
-                    
-                    // Update the main airflow input for the next components
-                    document.getElementById('system_airflow').value = formatLocalFloat(newAirflow, 0);
-
-                    newComponent = { ...newComponent, type: fittingType, name, details, velocity, pressureLoss, calculationDetails };
+                    name = `Udvidelse Ø${d1_exp}-Ø${d2_exp}`;
+                    details = `${angle_exp}°`;
+                    velocity = v;
+                    calculationDetails = { type: fittingType, A_m2: A1_exp, v_ms: v, zeta: zeta, Pdyn_Pa: Pdyn_Pa };
                     break;
                 
+                case 'contraction':
+                    const d1_con = parseLocalFloat(document.getElementById('sys_d1').value);
+                    const d2_con = parseLocalFloat(document.getElementById('sys_d2').value);
+                    const angle_con = parseLocalFloat(document.getElementById('sys_angle_dim').value);
+                    const A1_con = Math.PI * (getInternalDim(d1_con)/2000)**2;
+                    const A2_con = Math.PI * (getInternalDim(d2_con)/2000)**2;
+                    zeta = interpolateValue(angle_con, A2_con/A1_con, CONTRACTION_ZETA);
+                    v = Q/A2_con; // Use outlet velocity
+                    Pdyn_Pa = (RHO / 2) * v ** 2;
+                    pressureLoss = zeta * Pdyn_Pa;
+
+                    name = `Indsnævring Ø${d1_con}-Ø${d2_con}`;
+                    details = `${angle_con}°`;
+                    velocity = v;
+                    calculationDetails = { type: fittingType, A_m2: A2_con, v_ms: v, zeta: zeta, Pdyn_Pa: Pdyn_Pa };
+                    break;
+                
+                default:
+                     alert('Denne formstykke-type er endnu ikke implementeret i systemberegneren.'); return;
             }
             newComponent = { ...newComponent, type: fittingType, name, details, velocity, pressureLoss, calculationDetails };
-
-        } catch(e) {
-            alert('Fejl i input-felter for formstykke. Kontroller venligst værdierne.'); return;
         }
-    }    
-    } else {
-        return; 
+    }
+    catch (e) {
+        alert('Fejl i input-felter. Kontroller venligst værdierne.');
+        return;
     }
     
     systemComponents.push(newComponent);
@@ -1340,6 +1320,41 @@ function renderSystem() {
             <h3>Samlet Systemtryktab</h3>
             <p class="highlight">${formatLocalFloat(totalPressureDrop, 2)} Pa</p>
         </div>
+    `;
+}
+
+function getSystemFormHtml() {
+    return `
+        <section>
+            <h2>Systemberegning</h2>
+            
+            <div class="input-group">
+                <label for="system_airflow">Start Luftmængde (anvendes for alle efterfølgende komponenter)</label>
+                <div class="input-unit-wrapper" data-unit="m³/h">
+                    <input type="text" id="system_airflow" class="input-field" required>
+                </div>
+            </div>
+
+            <div id="systemComponentsContainer"></div>
+
+            <div id="totalPressureDropContainer" class="results-container"></div>
+
+            <h3 class="section-header">Tilføj Komponent</h3>
+            <form id="systemAddComponentForm">
+                <div class="input-field-group">
+                    <div class="input-group">
+                        <label for="systemComponentType">Komponenttype</label>
+                        <select id="systemComponentType" class="input-field">
+                            <option value="">-- Vælg type --</option>
+                            <option value="straightDuct">Lige Kanal</option>
+                            <option value="fitting">Formstykke</option>
+                            <option value="manualLoss">Manuelt Tab</option>
+                        </select>
+                    </div>
+                </div>
+                <div id="systemComponentInputsContainer"></div>
+            </form>
+        </section>
     `;
 }
 
