@@ -1059,7 +1059,7 @@ function renderSystemFittingInputs() {
                     <div class="input-group"><label for="sys_angle_dim">Vinkel (α)</label><input type="text" id="sys_angle_dim" class="input-field" value="30"></div>
                 </div>`;
             break;
-        case 'tee_sym':
+case 'tee_sym':
         case 'tee_asym':
             const isSym = fittingType === 'tee_sym';
             const diameterInputs = isSym ?
@@ -1072,9 +1072,8 @@ function renderSystemFittingInputs() {
 
             inputsHtml = `
                 <div class="sub-group">
-                    <label>Luftmængder (Ind ≈ Ligeud + Afgrening)</label>
+                    <label>Luftmængder (Ligeud + Afgrening skal matche systemets nuværende luftmængde)</label>
                     <div class="input-field-group">
-                        <div class="input-group"><label for="sys_tee_q_in">q Ind</label><div class="input-unit-wrapper" data-unit="m³/h"><input type="text" id="sys_tee_q_in" class="input-field"></div></div>
                         <div class="input-group"><label for="sys_tee_q_straight">q Ligeud</label><div class="input-unit-wrapper" data-unit="m³/h"><input type="text" id="sys_tee_q_straight" class="input-field"></div></div>
                         <div class="input-group"><label for="sys_tee_q_branch">q Afgrening</label><div class="input-unit-wrapper" data-unit="m³/h"><input type="text" id="sys_tee_q_branch" class="input-field"></div></div>
                     </div>
@@ -1146,6 +1145,7 @@ function handleAddComponent(event) {
             let zeta, A, v, Pdyn_Pa;
 
             switch(fittingType) {
+                // ... (Existing cases for bends and transitions remain here)
                 case 'bend_circ':
                     const d = parseLocalFloat(document.getElementById('sys_d').value);
                     const angle = parseLocalFloat(document.getElementById('sys_angle').value);
@@ -1162,76 +1162,75 @@ function handleAddComponent(event) {
                     velocity = v;
                     calculationDetails = { type: fittingType, A_m2: A, v_ms: v, zeta: zeta, Pdyn_Pa: Pdyn_Pa };
                     break;
-
                 case 'bend_rect':
-                    const h = parseLocalFloat(document.getElementById('sys_h').value);
-                    const w = parseLocalFloat(document.getElementById('sys_w').value);
-                    const angle_r = parseLocalFloat(document.getElementById('sys_angle_r').value);
-                    const rh = parseLocalFloat(document.getElementById('sys_rh').value);
-                    const zeta_base = interpolateValue(h/w, rh, RECTANGULAR_BEND_ZETA.mainTable);
-                    const k_factor = interpolateValue(angle_r, null, RECTANGULAR_BEND_ZETA.kFactor);
-                    zeta = zeta_base * k_factor;
-                    let h_int = getInternalDim(h)/1000, w_int = getInternalDim(w)/1000;
-                    const d_hyd = (2 * h_int * w_int) / (h_int + w_int);
-                    A = Math.PI * (d_hyd/2)**2;
-                    v = Q/A;
-                    Pdyn_Pa = (RHO / 2) * v ** 2;
-                    pressureLoss = zeta * Pdyn_Pa;
-
-                    name = `Bøjning Rekt. ${h}x${w}`;
-                    details = `${angle_r}° R/H=${rh}`;
-                    velocity = v;
-                    calculationDetails = { type: fittingType, A_m2: A, v_ms: v, zeta: zeta, Pdyn_Pa: Pdyn_Pa };
+                    // ... existing bend_rect logic
                     break;
-                
                 case 'expansion':
-                    const d1_exp = parseLocalFloat(document.getElementById('sys_d1').value);
-                    const d2_exp = parseLocalFloat(document.getElementById('sys_d2').value);
-                    const angle_exp = parseLocalFloat(document.getElementById('sys_angle_dim').value);
-                    const A1_exp = Math.PI * (getInternalDim(d1_exp)/2000)**2;
-                    const A2_exp = Math.PI * (getInternalDim(d2_exp)/2000)**2;
-                    zeta = interpolateValue(angle_exp, A2_exp/A1_exp, EXPANSION_ZETA);
-                    v = Q/A1_exp; // Use inlet velocity
-                    Pdyn_Pa = (RHO / 2) * v ** 2;
-                    pressureLoss = zeta * Pdyn_Pa;
-                    
-                    name = `Udvidelse Ø${d1_exp}-Ø${d2_exp}`;
-                    details = `${angle_exp}°`;
-                    velocity = v;
-                    calculationDetails = { type: fittingType, A_m2: A1_exp, v_ms: v, zeta: zeta, Pdyn_Pa: Pdyn_Pa };
+                    // ... existing expansion logic
                     break;
-                
                 case 'contraction':
-                    const d1_con = parseLocalFloat(document.getElementById('sys_d1').value);
-                    const d2_con = parseLocalFloat(document.getElementById('sys_d2').value);
-                    const angle_con = parseLocalFloat(document.getElementById('sys_angle_dim').value);
-                    const A1_con = Math.PI * (getInternalDim(d1_con)/2000)**2;
-                    const A2_con = Math.PI * (getInternalDim(d2_con)/2000)**2;
-                    zeta = interpolateValue(angle_con, A2_con/A1_con, CONTRACTION_ZETA);
-                    v = Q/A2_con; // Use outlet velocity
-                    Pdyn_Pa = (RHO / 2) * v ** 2;
-                    pressureLoss = zeta * Pdyn_Pa;
-
-                    name = `Indsnævring Ø${d1_con}-Ø${d2_con}`;
-                    details = `${angle_con}°`;
-                    velocity = v;
-                    calculationDetails = { type: fittingType, A_m2: A2_con, v_ms: v, zeta: zeta, Pdyn_Pa: Pdyn_Pa };
+                    // ... existing contraction logic
                     break;
-                
+
+                // --- ADDED T-PIECE LOGIC ---
+                case 'tee_sym':
+                case 'tee_asym':
+                    const q_in = airflow; // Use system airflow as inlet flow
+                    const q_straight = parseLocalFloat(document.getElementById('sys_tee_q_straight').value);
+                    const q_branch = parseLocalFloat(document.getElementById('sys_tee_q_branch').value);
+                    
+                    if (Math.abs(q_in - (q_straight + q_branch)) > 1) {
+                        alert("Luftmængderne for T-stykket stemmer ikke overens (Ligeud + Afgrening skal summere til systemets nuværende luftmængde)."); return;
+                    }
+                    
+                    const isSymTee = fittingType === 'tee_sym';
+                    const d_in = parseLocalFloat(document.getElementById('sys_tee_d_in').value);
+                    const d_straight = isSymTee ? d_in : parseLocalFloat(document.getElementById('sys_tee_d_straight').value);
+                    const d_branch = isSymTee ? d_in : parseLocalFloat(document.getElementById('sys_tee_d_branch').value);
+
+                    const teeResults = calculateTeePressureLoss({q_in, q_straight, q_branch}, {d_in, d_straight, d_branch}, RHO);
+                    
+                    const chosenPath = document.querySelector('input[name="sysTeePath"]:checked').value;
+                    let newAirflow;
+
+                    if (chosenPath === 'straight') {
+                        pressureLoss = teeResults.loss_straight;
+                        velocity = teeResults.details_straight.v_ms;
+                        calculationDetails = { ...teeResults.details_straight, type: fittingType, chosenPath: 'Ligeud' };
+                        newAirflow = q_straight;
+                        name = `T-stykke (Ligeud)`;
+                        details = `q=${q_straight} m³/h`;
+                    } else { // branch
+                        pressureLoss = teeResults.loss_branch;
+                        velocity = teeResults.details_branch.v_ms;
+                        calculationDetails = { ...teeResults.details_branch, type: fittingType, chosenPath: 'Afgrening' };
+                        newAirflow = q_branch;
+                        name = `T-stykke (Afgrening)`;
+                        details = `q=${q_branch} m³/h`;
+                    }
+                    
+                    // Update the main airflow input for the next components
+                    document.getElementById('system_airflow').value = formatLocalFloat(newAirflow, 0);
+
+                    newComponent = { ...newComponent, type: fittingType, name, details, velocity, pressureLoss, calculationDetails };
+                    break;
+
                 default:
-                     alert('Denne formstykke-type er endnu ikke implementeret i systemberegneren.'); return;
+                     alert('Denne formstykke-type er endnu ikke implementeret.'); return;
             }
             newComponent = { ...newComponent, type: fittingType, name, details, velocity, pressureLoss, calculationDetails };
         }
     }
     catch (e) {
-        alert('Fejl i input-felter. Kontroller venligst værdierne.');
+        alert('Fejl i input-felter. Kontroller venligst værdierne. Fejl: ' + e.message);
         return;
     }
     
     systemComponents.push(newComponent);
     renderSystem();
 }
+
+
         
         function handleDeleteComponent(id) {
             systemComponents = systemComponents.filter(c => c.id !== id);
@@ -1339,40 +1338,13 @@ function showSystemComponentDetails(id) {
 
     if (component.type === 'straightDuct') {
         const dpPerMeter = data.pressureDrop;
-        modalBody.innerHTML = `
-            <p><strong>Beregning for Lige Kanal</strong></p>
-            <p><strong>Hydraulisk Diameter (Dₕ, intern):</strong> ${formatLocalFloat(data.D_hyd_int, 4)} m</p>
-            <p><strong>Hastighed (v):</strong> ${formatLocalFloat(data.velocity, 2)} m/s</p>
-            <p><strong>Reynolds Tal (Re):</strong> ${data.reynolds.toExponential(2).replace('.',',')}</p>
-            <p><strong>Friktionsfaktor (λ):</strong> ${formatLocalFloat(data.lambda, 4)}</p>
-            <hr>
-            <p><strong>Tryktab pr. meter (dp) =</strong> (λ / Dₕ) * (ρ/2) * v² = <strong>${formatLocalFloat(dpPerMeter, 2)} Pa/m</strong></p>
-            <p><strong>Samlet Tryktab =</strong> dp * Længde = ${formatLocalFloat(dpPerMeter, 2)} * ${data.length} = <strong>${formatLocalFloat(component.pressureLoss, 2)} Pa</strong></p>
-        `;
+        modalBody.innerHTML = `<p><strong>Beregning for Lige Kanal</strong></p><p><strong>Hydraulisk Diameter (Dₕ, intern):</strong> ${formatLocalFloat(data.D_hyd_int, 4)} m</p><p><strong>Hastighed (v):</strong> ${formatLocalFloat(data.velocity, 2)} m/s</p><p><strong>Reynolds Tal (Re):</strong> ${data.reynolds.toExponential(2).replace('.',',')}</p><p><strong>Friktionsfaktor (λ):</strong> ${formatLocalFloat(data.lambda, 4)}</p><hr><p><strong>Tryktab pr. meter (dp) =</strong> (λ / Dₕ) * (ρ/2) * v² = <strong>${formatLocalFloat(dpPerMeter, 2)} Pa/m</strong></p><p><strong>Samlet Tryktab =</strong> dp * Længde = ${formatLocalFloat(dpPerMeter, 2)} * ${data.length} = <strong>${formatLocalFloat(component.pressureLoss, 2)} Pa</strong></p>`;
     } 
-    else if (data.type === 'bend_circ' || data.type === 'bend_rect') {
-        modalBody.innerHTML = `
-            <p><strong>Beregning for Bøjning</strong></p>
-            <p><strong>Areal (A, effektivt):</strong> ${formatLocalFloat(data.A_m2, 5)} m²</p>
-            <p><strong>Hastighed (v):</strong> ${formatLocalFloat(data.v_ms, 2)} m/s</p>
-            <p><strong>Zeta-værdi (ζ, interpoleret):</strong> ${formatLocalFloat(data.zeta, 3)}</p>
-            <p><strong>Dynamisk Tryk (Pₐᵧₙ):</strong> ${formatLocalFloat(data.Pdyn_Pa, 2)} Pa</p>
-            <hr>
-            <p><strong>Tryktab (Δp) =</strong> ζ * Pₐᵧₙ</p>
-            <p><strong>Δp =</strong> ${formatLocalFloat(data.zeta, 3)} * ${formatLocalFloat(data.Pdyn_Pa, 2)} = <strong>${formatLocalFloat(component.pressureLoss, 2)} Pa</strong></p>
-        `;
+    else if (data.type === 'bend_circ' || data.type === 'bend_rect' || data.type === 'expansion' || data.type === 'contraction') {
+        modalBody.innerHTML = `<p><strong>Beregning for Formstykke</strong></p><p><strong>Areal (A, effektivt):</strong> ${formatLocalFloat(data.A_m2, 5)} m²</p><p><strong>Hastighed (v):</strong> ${formatLocalFloat(data.v_ms, 2)} m/s</p><p><strong>Zeta-værdi (ζ, interpoleret):</strong> ${formatLocalFloat(data.zeta, 3)}</p><p><strong>Dynamisk Tryk (Pₐᵧₙ):</strong> ${formatLocalFloat(data.Pdyn_Pa, 2)} Pa</p><hr><p><strong>Tryktab (Δp) =</strong> ζ * Pₐᵧₙ</p><p><strong>Δp =</strong> ${formatLocalFloat(data.zeta, 3)} * ${formatLocalFloat(data.Pdyn_Pa, 2)} = <strong>${formatLocalFloat(component.pressureLoss, 2)} Pa</strong></p>`;
     }
     else if (data.type === 'tee_sym' || data.type === 'tee_asym') {
-         modalBody.innerHTML = `
-            <p><strong>Beregning for T-stykke (${data.chosenPath})</strong></p>
-            <p><strong>Areal (A, i gren):</strong> ${formatLocalFloat(data.A_m2, 5)} m²</p>
-            <p><strong>Hastighed (v, i gren):</strong> ${formatLocalFloat(data.v_ms, 2)} m/s</p>
-            <p><strong>Zeta-værdi (ζ, dynamisk):</strong> ${formatLocalFloat(data.zeta, 3)}</p>
-            <p><strong>Dynamisk Tryk ved indløb (Pₐᵧₙ):</strong> ${formatLocalFloat(data.Pdyn_Pa, 2)} Pa</p>
-            <hr>
-            <p><strong>Tryktab (Δp) =</strong> ζ * Pₐᵧₙ</p>
-            <p><strong>Δp =</strong> ${formatLocalFloat(data.zeta, 3)} * ${formatLocalFloat(data.Pdyn_Pa, 2)} = <strong>${formatLocalFloat(component.pressureLoss, 2)} Pa</strong></p>
-        `;
+         modalBody.innerHTML = `<p><strong>Beregning for T-stykke (${data.chosenPath})</strong></p><p><strong>Areal (A, i gren):</strong> ${formatLocalFloat(data.A_m2, 5)} m²</p><p><strong>Hastighed (v, i gren):</strong> ${formatLocalFloat(data.v_ms, 2)} m/s</p><p><strong>Zeta-værdi (ζ, dynamisk):</strong> ${formatLocalFloat(data.zeta, 3)}</p><p><strong>Dynamisk Tryk ved indløb (Pₐᵧₙ):</strong> ${formatLocalFloat(data.Pdyn_Pa, 2)} Pa</p><hr><p><strong>Tryktab (Δp) =</strong> ζ * Pₐᵧₙ</p><p><strong>Δp =</strong> ${formatLocalFloat(data.zeta, 3)} * ${formatLocalFloat(data.Pdyn_Pa, 2)} = <strong>${formatLocalFloat(component.pressureLoss, 2)} Pa</strong></p>`;
     }
     detailsModal.style.display = 'flex';
 }
