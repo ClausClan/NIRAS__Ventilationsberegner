@@ -971,45 +971,48 @@ function handleComponentTypeChange() {
             <button type="submit" class="button primary">Tilføj til System</button>
         `;
         
-        // Function to render the correct dimension inputs
         const renderDuctInputs = () => {
             const shape = document.querySelector('input[name="sysDuctShape"]:checked').value;
             const container = document.getElementById('sysDuctInputsContainer');
             if (shape === 'round') {
-                container.innerHTML = `
-                    <div class="input-group">
-                        <label for="ductDiameter">Diameter</label>
-                        <select id="ductDiameter" class="input-field">${roundOptions}</select>
-                    </div>`;
+                container.innerHTML = `<div class="input-group"><label for="ductDiameter">Diameter</label><select id="ductDiameter" class="input-field">${roundOptions}</select></div>`;
             } else {
-                container.innerHTML = `
-                    <div class="input-field-group">
-                        <div class="input-group"><label for="ductSideA">Side A</label><select id="ductSideA" class="input-field">${rectOptions}</select></div>
-                        <div class="input-group"><label for="ductSideB">Side B</label><select id="ductSideB" class="input-field">${rectOptions}</select></div>
-                    </div>`;
+                container.innerHTML = `<div class="input-field-group"><div class="input-group"><label for="ductSideA">Side A</label><select id="ductSideA" class="input-field">${rectOptions}</select></div><div class="input-group"><label for="ductSideB">Side B</label><select id="ductSideB" class="input-field">${rectOptions}</select></div></div>`;
             }
         };
 
-        // Add event listeners and render initial inputs
         document.getElementsByName('sysDuctShape').forEach(r => r.addEventListener('change', renderDuctInputs));
         renderDuctInputs();
 
     } else if (type === 'fitting') {
-        systemComponentInputsContainer.innerHTML = '<p>Logik for formstykker kommer i et senere trin...</p>';
+        systemComponentInputsContainer.innerHTML = `
+            <div class="input-group">
+                <label for="systemFittingType">Vælg type formstykke</label>
+                <select id="systemFittingType" class="input-field">
+                    <option value="">-- Vælg type --</option>
+                    <optgroup label="Bøjninger">
+                        <option value="bend_circ">Bøjning, Cirkulær</option>
+                        <option value="bend_rect">Bøjning, Rektangulær</option>
+                    </optgroup>
+                    <optgroup label="Dimensionsændringer">
+                        <option value="expansion">Udvidelse</option>
+                        <option value="contraction">Indsnævring</option>
+                    </optgroup>
+                    <optgroup label="T-stykker (Cirkulær)">
+                        <option value="tee_sym">T-stykke, Symmetrisk</option>
+                        <option value="tee_asym">T-stykke, Asymmetrisk</option>
+                    </optgroup>
+                </select>
+            </div>
+            <div id="systemFittingInputsContainer"></div>
+        `;
+        document.getElementById('systemFittingType').addEventListener('change', renderSystemFittingInputs);
     
     } else if (type === 'manualLoss') {
         systemComponentInputsContainer.innerHTML = `
             <div class="input-field-group">
-                 <div class="input-group">
-                    <label for="manualLossName">Beskrivelse</label>
-                    <input type="text" id="manualLossName" class="input-field" placeholder="F.eks. Special-rist" required>
-                </div>
-                <div class="input-group">
-                    <label for="manualLossValue">Tryktab</label>
-                    <div class="input-unit-wrapper" data-unit="Pa">
-                        <input type="text" id="manualLossValue" class="input-field" required>
-                    </div>
-                </div>
+                 <div class="input-group"><label for="manualLossName">Beskrivelse</label><input type="text" id="manualLossName" class="input-field" placeholder="F.eks. Special-rist" required></div>
+                <div class="input-group"><label for="manualLossValue">Tryktab</label><div class="input-unit-wrapper" data-unit="Pa"><input type="text" id="manualLossValue" class="input-field" required></div></div>
             </div>
             <button type="submit" class="button primary">Tilføj til System</button>
         `;
