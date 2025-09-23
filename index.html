@@ -1040,50 +1040,86 @@ function handleComponentTypeChange() {
 }
         
         // This is a NEW helper function to show the inputs for the selected fitting
-        function renderSystemFittingInputs() {
-            const fittingType = document.getElementById('systemFittingType').value;
-            const container = document.getElementById('systemFittingInputsContainer');
-            container.innerHTML = ''; // Clear old inputs
-        
-            if (!fittingType) return;
-        
-            let inputsHtml = '';
-            switch (fittingType) {
-                case 'bend_circ':
-                    inputsHtml = `
-                        <div class="input-field-group">
-                            <div class="input-unit-wrapper" data-unit="mm"><label for="sys_d">Diameter (d)</label><input type="text" id="sys_d" class="input-field"></div>
-                            <div class="input-unit-wrapper" data-unit="°"><label for="sys_angle">Vinkel (α)</label><input type="text" id="sys_angle" class="input-field" value="90"></div>
-                            <div class="input-unit-wrapper" data-unit=""><label for="sys_rd">R/d ratio</label><input type="text" id="sys_rd" class="input-field" value="1.0"></div>
-                        </div>`;
-                    break;
-                case 'bend_rect':
-                     inputsHtml = `
-                        <div class="input-field-group">
-                            <div class="input-unit-wrapper" data-unit="mm"><label for="sys_h">Højde (H)</label><input type="text" id="sys_h" class="input-field"></div>
-                            <div class="input-unit-wrapper" data-unit="mm"><label for="sys_w">Bredde (B)</label><input type="text" id="sys_w" class="input-field"></div>
-                            <div class="input-unit-wrapper" data-unit="°"><label for="sys_angle_r">Vinkel (α)</label><input type="text" id="sys_angle_r" class="input-field" value="90"></div>
-                            <div class="input-unit-wrapper" data-unit=""><label for="sys_rh">R/H ratio</label><input type="text" id="sys_rh" class="input-field" value="1.0"></div>
-                        </div>`;
-                    break;
-                case 'expansion':
-                case 'contraction':
-                    inputsHtml = `
-                        <div class="input-field-group">
-                            <div class="input-unit-wrapper" data-unit="mm"><label for="sys_d1">Diameter Ind (d₁)</label><input type="text" id="sys_d1" class="input-field"></div>
-                            <div class="input-unit-wrapper" data-unit="mm"><label for="sys_d2">Diameter Ud (d₂)</label><input type="text" id="sys_d2" class="input-field"></div>
-                            <div class="input-unit-wrapper" data-unit="°"><label for="sys_angle_dim">Vinkel (α)</label><input type="text" id="sys_angle_dim" class="input-field" value="30"></div>
-                        </div>`;
-                    break;
-            }
-            container.innerHTML = inputsHtml + `<button type="submit" class="button primary">Tilføj til System</button>`;
-        }
+function renderSystemFittingInputs() {
+    const fittingType = document.getElementById('systemFittingType').value;
+    const container = document.getElementById('systemFittingInputsContainer');
+    container.innerHTML = ''; // Clear old inputs
+
+    if (!fittingType) return;
+    
+    // Build dropdowns from the standard size arrays
+    const roundOptions = STANDARD_ROUND_SIZES_MM.map(s => `<option value="${s}">${s} mm</option>`).join('');
+    const rectOptions = STANDARD_RECT_SIZES_MM.map(s => `<option value="${s}">${s} mm</option>`).join('');
+
+    let inputsHtml = '';
+    switch (fittingType) {
+        case 'bend_circ':
+            inputsHtml = `
+                <div class="input-field-group">
+                    <div class="input-group"><label for="sys_d">Diameter (d)</label><select id="sys_d" class="input-field">${roundOptions}</select></div>
+                    <div class="input-group"><label for="sys_angle">Vinkel (α)</label><input type="text" id="sys_angle" class="input-field" value="90"></div>
+                    <div class="input-group"><label for="sys_rd">R/d ratio</label><input type="text" id="sys_rd" class="input-field" value="1.0"></div>
+                </div>`;
+            break;
+        case 'bend_rect':
+             inputsHtml = `
+                <div class="input-field-group">
+                    <div class="input-group"><label for="sys_h">Højde (H)</label><select id="sys_h" class="input-field">${rectOptions}</select></div>
+                    <div class="input-group"><label for="sys_w">Bredde (B)</label><select id="sys_w" class="input-field">${rectOptions}</select></div>
+                    <div class="input-group"><label for="sys_angle_r">Vinkel (α)</label><input type="text" id="sys_angle_r" class="input-field" value="90"></div>
+                    <div class="input-group"><label for="sys_rh">R/H ratio</label><input type="text" id="sys_rh" class="input-field" value="1.0"></div>
+                </div>`;
+            break;
+        case 'expansion':
+        case 'contraction':
+            inputsHtml = `
+                <div class="input-field-group">
+                    <div class="input-group"><label for="sys_d1">Diameter Ind (d₁)</label><select id="sys_d1" class="input-field">${roundOptions}</select></div>
+                    <div class="input-group"><label for="sys_d2">Diameter Ud (d₂)</label><select id="sys_d2" class="input-field">${roundOptions}</select></div>
+                    <div class="input-group"><label for="sys_angle_dim">Vinkel (α)</label><input type="text" id="sys_angle_dim" class="input-field" value="30"></div>
+                </div>`;
+            break;
+        case 'tee_sym':
+        case 'tee_asym':
+            const isSym = fittingType === 'tee_sym';
+            const diameterInputs = isSym ?
+                `<div class="input-group"><label>Diameter (alle grene)</label><select id="sys_tee_d_in" class="input-field">${roundOptions}</select></div>` :
+                `<div class="input-field-group">
+                    <div class="input-group"><label for="sys_tee_d_in">Ø Ind</label><select id="sys_tee_d_in" class="input-field">${roundOptions}</select></div>
+                    <div class="input-group"><label for="sys_tee_d_straight">Ø Ligeud</label><select id="sys_tee_d_straight" class="input-field">${roundOptions}</select></div>
+                    <div class="input-group"><label for="sys_tee_d_branch">Ø Afgrening</label><select id="sys_tee_d_branch" class="input-field">${roundOptions}</select></div>
+                </div>`;
+
+            inputsHtml = `
+                <div class="sub-group">
+                    <label>Luftmængder (Ind ≈ Ligeud + Afgrening)</label>
+                    <div class="input-field-group">
+                        <div class="input-group"><label for="sys_tee_q_in">q Ind</label><div class="input-unit-wrapper" data-unit="m³/h"><input type="text" id="sys_tee_q_in" class="input-field"></div></div>
+                        <div class="input-group"><label for="sys_tee_q_straight">q Ligeud</label><div class="input-unit-wrapper" data-unit="m³/h"><input type="text" id="sys_tee_q_straight" class="input-field"></div></div>
+                        <div class="input-group"><label for="sys_tee_q_branch">q Afgrening</label><div class="input-unit-wrapper" data-unit="m³/h"><input type="text" id="sys_tee_q_branch" class="input-field"></div></div>
+                    </div>
+                </div>
+                <div class="sub-group">
+                    ${diameterInputs}
+                </div>
+                <div class="sub-group">
+                    <label>Hvilken gren fortsætter systemet med?</label>
+                    <div class="radio-group"> 
+                        <input type="radio" id="sysTeePathStraight" name="sysTeePath" value="straight" checked><label for="sysTeePathStraight">Ligeud</label> 
+                        <input type="radio" id="sysTeePathBranch" name="sysTeePath" value="branch"><label for="sysTeePathBranch">Afgrening</label> 
+                    </div>
+                </div>
+            `;
+            break;
+    }
+    container.innerHTML = inputsHtml + `<button type="submit" class="button primary">Tilføj til System</button>`;
+}
         
 function handleAddComponent(event) {
     event.preventDefault();
     const componentType = systemComponentTypeSelect.value;
     
-    const airflow = parseLocalFloat(document.getElementById('system_airflow').value); // Using the new global airflow
+    const airflow = parseLocalFloat(document.getElementById('system_airflow').value);
     const temp = parseLocalFloat(document.getElementById('temperature').value);
     if (isNaN(airflow) || isNaN(temp) || airflow <= 0) {
         alert('Udfyld venligst Start Luftmængde og global Temperatur korrekt.');
@@ -1108,7 +1144,7 @@ function handleAddComponent(event) {
             performance = getPerformance(Q, diameter / 1000, { shape: 'round' }, RHO, NU);
             name = `Lige Kanal Ø${diameter}`;
             details = `${length}m`;
-        } else { // rectangular
+        } else {
             const sideA = parseLocalFloat(document.getElementById('ductSideA').value);
             const sideB = parseLocalFloat(document.getElementById('ductSideB').value);
             performance = getPerformance(Q, 0, { shape: 'rect', a: sideA, b: sideB }, RHO, NU);
@@ -1122,7 +1158,8 @@ function handleAddComponent(event) {
             name: name,
             details: details,
             velocity: performance.velocity,
-            pressureLoss: performance.pressureDrop * length
+            pressureLoss: performance.pressureDrop * length,
+            calculationDetails: { ...performance, length: length, RHO: RHO } // <-- Save details here
         };
 
     } else if (componentType === 'manualLoss') {
@@ -1137,9 +1174,105 @@ function handleAddComponent(event) {
             type: 'manualLoss',
             name: name,
             details: '',
-            velocity: null, // Not applicable
-            pressureLoss: pressureLoss
+            velocity: null,
+            pressureLoss: pressureLoss,
+            calculationDetails: null // No details for manual loss
         };
+        else if (componentType === 'fitting') {
+        const fittingType = document.getElementById('systemFittingType').value;
+        if (!fittingType) { alert('Vælg venligst en type formstykke.'); return; }
+
+        let name, details, velocity, pressureLoss, calculationDetails;
+
+        try {
+            switch(fittingType) {
+                case 'bend_circ':
+                    const d = parseLocalFloat(document.getElementById('sys_d').value);
+                    const angle = parseLocalFloat(document.getElementById('sys_angle').value);
+                    const rd = parseLocalFloat(document.getElementById('sys_rd').value);
+                    const rd_key = rd < 1.25 ? "rd1_0" : "rd1_5";
+                    const zeta = interpolateValue(angle, d, CIRCULAR_BEND_ZETA[rd_key]);
+                    const A = Math.PI * (getInternalDim(d)/2000)**2;
+                    const v = Q/A;
+                    const Pdyn_Pa = (RHO / 2) * v ** 2;
+                    pressureLoss = zeta * Pdyn_Pa;
+                    
+                    name = `Bøjning Cirk. Ø${d}`;
+                    details = `${angle}° R/d=${rd}`;
+                    velocity = v;
+                    calculationDetails = { type: fittingType, A_m2: A, v_ms: v, zeta: zeta, Pdyn_Pa: Pdyn_Pa };
+                    break;
+
+                case 'bend_rect':
+                    const h = parseLocalFloat(document.getElementById('sys_h').value);
+                    const w = parseLocalFloat(document.getElementById('sys_w').value);
+                    const angle_r = parseLocalFloat(document.getElementById('sys_angle_r').value);
+                    const rh = parseLocalFloat(document.getElementById('sys_rh').value);
+                    const zeta_base = interpolateValue(h/w, rh, RECTANGULAR_BEND_ZETA.mainTable);
+                    const k_factor = interpolateValue(angle_r, null, RECTANGULAR_BEND_ZETA.kFactor);
+                    const zeta_rect = zeta_base * k_factor;
+                    let h_int = getInternalDim(h)/1000, w_int = getInternalDim(w)/1000;
+                    const d_hyd = (2 * h_int * w_int) / (h_int + w_int);
+                    const A_rect = Math.PI * (d_hyd/2)**2;
+                    const v_rect = Q/A_rect;
+                    const Pdyn_Pa_rect = (RHO / 2) * v_rect ** 2;
+                    pressureLoss = zeta_rect * Pdyn_Pa_rect;
+
+                    name = `Bøjning Rekt. ${h}x${w}`;
+                    details = `${angle_r}° R/H=${rh}`;
+                    velocity = v_rect;
+                    calculationDetails = { type: fittingType, A_m2: A_rect, v_ms: v_rect, zeta: zeta_rect, Pdyn_Pa: Pdyn_Pa_rect };
+                    break;
+                
+                    case 'tee_sym':
+                    case 'tee_asym':
+                    const q_in = parseLocalFloat(document.getElementById('sys_tee_q_in').value);
+                    const q_straight = parseLocalFloat(document.getElementById('sys_tee_q_straight').value);
+                    const q_branch = parseLocalFloat(document.getElementById('sys_tee_q_branch').value);
+                    
+                    if (Math.abs(q_in - (q_straight + q_branch)) > 1) {
+                        alert("Luftmængderne for T-stykket stemmer ikke overens (Ind ≈ Ligeud + Afgrening)."); return;
+                    }
+                    
+                    const isSymTee = fittingType === 'tee_sym';
+                    const d_in = parseLocalFloat(document.getElementById('sys_tee_d_in').value);
+                    const d_straight = isSymTee ? d_in : parseLocalFloat(document.getElementById('sys_tee_d_straight').value);
+                    const d_branch = isSymTee ? d_in : parseLocalFloat(document.getElementById('sys_tee_d_branch').value);
+
+                    const teeResults = calculateTeePressureLoss({q_in, q_straight, q_branch}, {d_in, d_straight, d_branch}, RHO);
+                    
+                    const chosenPath = document.querySelector('input[name="sysTeePath"]:checked').value;
+                    let newAirflow;
+
+                    if (chosenPath === 'straight') {
+                        pressureLoss = teeResults.loss_straight;
+                        velocity = teeResults.details_straight.v_ms;
+                        calculationDetails = { ...teeResults.details_straight, type: fittingType, chosenPath: 'Ligeud' };
+                        newAirflow = q_straight;
+                        name = `T-stykke (Ligeud)`;
+                        details = `q=${q_straight} m³/h`;
+                    } else { // branch
+                        pressureLoss = teeResults.loss_branch;
+                        velocity = teeResults.details_branch.v_ms;
+                        calculationDetails = { ...teeResults.details_branch, type: fittingType, chosenPath: 'Afgrening' };
+                        newAirflow = q_branch;
+                        name = `T-stykke (Afgrening)`;
+                        details = `q=${q_branch} m³/h`;
+                    }
+                    
+                    // Update the main airflow input for the next components
+                    document.getElementById('system_airflow').value = formatLocalFloat(newAirflow, 0);
+
+                    newComponent = { ...newComponent, type: fittingType, name, details, velocity, pressureLoss, calculationDetails };
+                    break;
+                
+            }
+            newComponent = { ...newComponent, type: fittingType, name, details, velocity, pressureLoss, calculationDetails };
+
+        } catch(e) {
+            alert('Fejl i input-felter for formstykke. Kontroller venligst værdierne.'); return;
+        }
+    }    
     } else {
         return; 
     }
@@ -1166,13 +1299,21 @@ function renderSystem() {
     const tableRows = systemComponents.map(c => {
         totalPressureDrop += c.pressureLoss;
         const velocityText = c.velocity ? `${formatLocalFloat(c.velocity, 2)} m/s` : 'N/A';
+        // Add the details button if calculationDetails exist
+        const detailsButton = c.calculationDetails 
+            ? `<button class="details-btn" onclick="showSystemComponentDetails(${c.id})">ⓘ</button>`
+            : '';
+
         return `
             <tr>
                 <td>${c.name}<br><small>${c.details}</small></td>
                 <td>${formatLocalFloat(c.airflow, 0)} m³/h</td>
                 <td>${velocityText}</td>
                 <td>${formatLocalFloat(c.pressureLoss, 2)} Pa</td>
-                <td><button class="delete-btn" onclick="handleDeleteComponent(${c.id})">&times;</button></td>
+                <td>
+                    ${detailsButton}
+                    <button class="delete-btn" onclick="handleDeleteComponent(${c.id})">&times;</button>
+                </td>
             </tr>
         `;
     }).join('');
@@ -1200,6 +1341,53 @@ function renderSystem() {
             <p class="highlight">${formatLocalFloat(totalPressureDrop, 2)} Pa</p>
         </div>
     `;
+}
+
+function showSystemComponentDetails(id) {
+    const component = systemComponents.find(c => c.id === id);
+    if (!component || !component.calculationDetails) return;
+
+    const data = component.calculationDetails;
+    modalTitle.innerText = `Detaljer for ${component.name}`;
+
+    if (component.type === 'straightDuct') {
+        const dpPerMeter = data.pressureDrop;
+        modalBody.innerHTML = `
+            <p><strong>Beregning for Lige Kanal</strong></p>
+            <p><strong>Hydraulisk Diameter (Dₕ, intern):</strong> ${formatLocalFloat(data.D_hyd_int, 4)} m</p>
+            <p><strong>Hastighed (v):</strong> ${formatLocalFloat(data.velocity, 2)} m/s</p>
+            <p><strong>Reynolds Tal (Re):</strong> ${data.reynolds.toExponential(2).replace('.',',')}</p>
+            <p><strong>Friktionsfaktor (λ):</strong> ${formatLocalFloat(data.lambda, 4)}</p>
+            <hr>
+            <p><strong>Tryktab pr. meter (dp) =</strong> (λ / Dₕ) * (ρ/2) * v² = <strong>${formatLocalFloat(dpPerMeter, 2)} Pa/m</strong></p>
+            <p><strong>Samlet Tryktab =</strong> dp * Længde = ${formatLocalFloat(dpPerMeter, 2)} * ${data.length} = <strong>${formatLocalFloat(component.pressureLoss, 2)} Pa</strong></p>
+        `;
+    } 
+    else if (data.type === 'bend_circ' || data.type === 'bend_rect') {
+        modalBody.innerHTML = `
+            <p><strong>Beregning for Bøjning</strong></p>
+            <p><strong>Areal (A, effektivt):</strong> ${formatLocalFloat(data.A_m2, 5)} m²</p>
+            <p><strong>Hastighed (v):</strong> ${formatLocalFloat(data.v_ms, 2)} m/s</p>
+            <p><strong>Zeta-værdi (ζ, interpoleret):</strong> ${formatLocalFloat(data.zeta, 3)}</p>
+            <p><strong>Dynamisk Tryk (Pₐᵧₙ):</strong> ${formatLocalFloat(data.Pdyn_Pa, 2)} Pa</p>
+            <hr>
+            <p><strong>Tryktab (Δp) =</strong> ζ * Pₐᵧₙ</p>
+            <p><strong>Δp =</strong> ${formatLocalFloat(data.zeta, 3)} * ${formatLocalFloat(data.Pdyn_Pa, 2)} = <strong>${formatLocalFloat(component.pressureLoss, 2)} Pa</strong></p>
+        `;
+    }
+    else if (data.type === 'tee_sym' || data.type === 'tee_asym') {
+         modalBody.innerHTML = `
+            <p><strong>Beregning for T-stykke (${data.chosenPath})</strong></p>
+            <p><strong>Areal (A, i gren):</strong> ${formatLocalFloat(data.A_m2, 5)} m²</p>
+            <p><strong>Hastighed (v, i gren):</strong> ${formatLocalFloat(data.v_ms, 2)} m/s</p>
+            <p><strong>Zeta-værdi (ζ, dynamisk):</strong> ${formatLocalFloat(data.zeta, 3)}</p>
+            <p><strong>Dynamisk Tryk ved indløb (Pₐᵧₙ):</strong> ${formatLocalFloat(data.Pdyn_Pa, 2)} Pa</p>
+            <hr>
+            <p><strong>Tryktab (Δp) =</strong> ζ * Pₐᵧₙ</p>
+            <p><strong>Δp =</strong> ${formatLocalFloat(data.zeta, 3)} * ${formatLocalFloat(data.Pdyn_Pa, 2)} = <strong>${formatLocalFloat(component.pressureLoss, 2)} Pa</strong></p>
+        `;
+    }
+    detailsModal.style.display = 'flex';
 }
             
         document.addEventListener('DOMContentLoaded', initializeApp);
