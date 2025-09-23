@@ -315,37 +315,6 @@
             <div id="dimensioning" class="tab-content"></div>
             <div id="fittings" class="tab-content hidden"></div>
             <div id="system" class="tab-content hidden"></div>/
-        <section>
-            <h2>Systemberegning</h2>
-            
-            <div class="input-group">
-                <label for="system_airflow">Start Luftmængde (anvendes for alle efterfølgende komponenter)</label>
-                <div class="input-unit-wrapper" data-unit="m³/h">
-                    <input type="text" id="system_airflow" class="input-field" required>
-                </div>
-            </div>
-
-            <div id="systemComponentsContainer"></div>
-
-            <div id="totalPressureDropContainer" class="results-container"></div>
-
-            <h3 class="section-header">Tilføj Komponent</h3>
-            <form id="systemAddComponentForm">
-                <div class="input-field-group">
-                    <div class="input-group">
-                        <label for="systemComponentType">Komponenttype</label>
-                        <select id="systemComponentType" class="input-field">
-                            <option value="">-- Vælg type --</option>
-                            <option value="straightDuct">Lige Kanal</option>
-                            <option value="fitting">Formstykke</option>
-                            <option value="manualLoss">Manuelt Tab</option>
-                        </select>
-                    </div>
-                </div>
-                <div id="systemComponentInputsContainer"></div>
-            </form>
-        </section>
-        </div>    
         </div>
         <footer class="app-footer">
             <p>AppVersion 0.13 --- Spørgsmål kontakt CWA</p>
