@@ -713,11 +713,11 @@
                 const type = fittingTypeSelect.value;
                 let fittingResult = {};
 
-                } else if (type.startsWith('tee')) {
+                } if (type.startsWith('tee')) {
                     const flowType = document.querySelector('input[name="fitTeeFlowType"]:checked').value;
                     const isSym = type === 'tee_sym';
                     
-                    if (flowType === 'splitting') {
+                    else if (flowType === 'splitting') {
                         const q_in = parseLocalFloat(document.getElementById('q_in').value), q_straight = parseLocalFloat(document.getElementById('q_straight').value), q_branch = parseLocalFloat(document.getElementById('q_branch').value);
                         if (Math.abs(q_in - (q_straight + q_branch)) > 1) throw new Error("Luftmængderne stemmer ikke overens (Ind ≈ Ligeud + Afgrening).");
                         
