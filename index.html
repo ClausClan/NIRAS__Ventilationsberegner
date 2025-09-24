@@ -631,17 +631,56 @@
                     illustrationSvg = `<svg width="142" height="79" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" overflow="hidden"><defs><clipPath id="clip0"><rect x="770" y="3526" width="142" height="79"/></clipPath><image width="142" height="79" xlink:href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAI4AAABPAQMAAAAHh29aAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAGUExURQAAAADk/7J3YKoAAAABdFJOUwBA5thmAAAACXBIWXMAAA7DAAAOwwHHb6hkAAAAnElEQVQ4y2OgE+BvwBBiYqCpEBYbyQTy/4HgAIqQAIhwoKEQ06jQYBViBiWHDwxKCgz1IBYomUGTnxBUDZIQVwOGEDsDhhATphDD4BFiAgmxOCEHCiNUCDmPNUwECTEi63QACyEMAwbXA6AQ+yV2IAtFFYMQipUN8xOAQshmAW1UgDoFyV0OIBIlshoSBmMQkiIETl8IQHYxxsAAAIAmRVut56kWAAAAAElFTkSuQmCC" preserveAspectRatio="none" id="img1"></image><clipPath id="clip2"><rect x="0" y="0" width="1352738" height="752580"/></clipPath></defs><g clip-path="url(#clip0)" transform="translate(-770 -3526)"><g transform="matrix(0.000104972 0 0 0.000104972 770 3526)"><g clip-path="url(#clip2)" transform="matrix(1 0 0 1 -0.0103559 0.412109)"><use width="100%" height="100%" xlink:href="#img1" transform="scale(9526.32 9526.32)"></use></g></g></g></svg>`;
                     fittingInputsContainer.innerHTML = `<div class="sub-group"><label>Luftmængder (q)</label><div class="input-field-group"> <div class="input-unit-wrapper" data-unit="m³/h"><label for="q_in">Ind</label><input type="text" id="q_in" class="input-field" required></div> <div class="input-unit-wrapper" data-unit="m³/h"><label for="q_out1">Ud 1</label><input type="text" id="q_out1" class="input-field" required></div> <div class="input-unit-wrapper" data-unit="m³/h"><label for="q_out2">Ud 2</label><input type="text" id="q_out2" class="input-field" required></div> </div></div><div class="sub-group" id="teeDiameterInputs"><label>Diametre (Ø)</label><div class="input-field-group"> <div class="input-unit-wrapper" data-unit="mm"><label for="d_in">Ind</label><input type="text" id="d_in" class="input-field" required></div> <div class="input-unit-wrapper" data-unit="mm"><label for="d_out1">Ud 1</label><input type="text" id="d_out1" class="input-field" required></div> <div class="input-unit-wrapper" data-unit="mm"><label for="d_out2">Ud 2</label><input type="text" id="d_out2" class="input-field" required></div> </div></div>`;
                     break;
-                case 'tee_sym':
-                case 'tee_asym':
-                    illustrationSvg = `<svg width="142" height="79" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" overflow="hidden"><defs><clipPath id="clip0"><rect x="768" y="3409" width="142" height="79"/></clipPath><image width="142" height="79" xlink:href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAI4AAABPBAMAAADPZ+AqAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAbUExURQAAAADk/wDl/wDk/wDi/gDl/QDl/gDk/QDk/hKeHlcAAAAJdFJOUwD/bEG7pOeM0bJsJmgAAAAJcEhZcwAADsMAAA7DAcdvqGQAAACySURBVFjD7dYxDoJAEAXQP8QD7OglLOUGdrY29kQvYElJ57UxsULWhSG/EPJ/tUsyL5NdFhYbjy9NGjppaQNy5GzL2X8G5k5xYPh2jOREuis6RnICDY0cG3ye4k52vyL9uB9+FYbWpzBNHCf2/pSmcuSs2sncbMY1Nn3/yRTNejQdOXLkyJEjRw7BmfXLV/4u9Znj3BLHeVwoTNUdKc7uaSeG8z4fV4bTomoYzgu4Y2UBeuzaEvAB9MgqAAAAAElFTkSuQmCC" preserveAspectRatio="none" id="img1"></image><clipPath id="clip2"><rect x="0" y="0" width="1352739" height="752580"/></clipPath></defs><g clip-path="url(#clip0)" transform="translate(-768 -3409)"><g transform="matrix(0.000104972 0 0 0.000104972 768 3409)"><g clip-path="url(#clip2)" transform="matrix(1 0 0 1 -0.25 -0.0927734)"><use width="100%" height="100%" xlink:href="#img1" transform="scale(9526.33 9526.33)"></use></g></g></g></svg>`;
-                    fittingInputsContainer.innerHTML = `<div class="sub-group"><label>Luftmængder (q)</label><div class="input-field-group"> <div class="input-unit-wrapper" data-unit="m³/h"><label for="q_in">Ind</label><input type="text" id="q_in" class="input-field" required></div> <div class="input-unit-wrapper" data-unit="m³/h"><label for="q_straight">Ligeud</label><input type="text" id="q_straight" class="input-field" required></div> <div class="input-unit-wrapper" data-unit="m³/h"><label for="q_branch">Afgrening</label><input type="text" id="q_branch" class="input-field" required></div> </div></div><div class="sub-group" id="teeDiameterInputs"></div>`;
-                    const diaContainer = document.getElementById('teeDiameterInputs');
-                    if (type === 'tee_sym') {
-                        diaContainer.innerHTML = `<label>Diameter (alle grene)</label><div class="input-unit-wrapper" data-unit="mm"><input type="text" id="d_in" class="input-field" required></div>`;
-                    } else {
-                        diaContainer.innerHTML = `<label>Diametre (Ø)</label><div class="input-field-group"> <div class="input-unit-wrapper" data-unit="mm"><label for="d_in">Ind</label><input type="text" id="d_in" class="input-field" required></div> <div class="input-unit-wrapper" data-unit="mm"><label for="d_straight">Ligeud</label><input type="text" id="d_straight" class="input-field" required></div> <div class="input-unit-wrapper" data-unit="mm"><label for="d_branch">Afgrening</label><input type="text" id="d_branch" class="input-field" required></div> </div>`;
-                    }
-                    break;
+               case 'tee_sym':
+        case 'tee_asym':
+            const splittingSvg = `<svg viewBox="0 0 100 80"><path class="line" d="M10 40 L90 40 M50 40 L50 70 M10 30 L10 50 M90 30 L90 50 M40 70 L60 70" /><path class="line" d="M10 40 L20 30 M10 40 L20 50" /><text class="label" x="5" y="25">Ind</text><text class="label" x="70" y="25">Ligeud</text><text class="label" x="55" y="70">Afgrening</text></svg>`;
+            const mergingSvg = `<svg viewBox="0 0 100 80"><path class="line" d="M10 40 L90 40 M50 40 L50 70 M10 30 L10 50 M90 30 L90 50 M40 70 L60 70" /><path class="line" d="M90 40 L80 30 M90 40 L80 50 M50 70 L40 60 M50 70 L60 60" /><text class="label" x="5" y="25">Ud</text><text class="label" x="70" y="25">Ligeud</text><text class="label" x="55" y="70">Afgrening</text></svg>`;
+
+            fittingInputsContainer.innerHTML = `
+                <div class="input-group">
+                    <label>Flow Type</label> 
+                    <div class="radio-group"> 
+                        <input type="radio" id="fitTeeFlowSplit" name="fitTeeFlowType" value="splitting" checked><label for="fitTeeFlowSplit">Indblæsning (Dele-flow)</label> 
+                        <input type="radio" id="fitTeeFlowMerge" name="fitTeeFlowType" value="merging"><label for="fitTeeFlowMerge">Udsugning (Samle-flow)</label> 
+                    </div>
+                </div>
+                <div id="fitTeeSpecificInputs"></div>
+            `;
+
+            const updateTeeUI = () => {
+                const flowType = document.querySelector('input[name="fitTeeFlowType"]:checked').value;
+                const container = document.getElementById('fitTeeSpecificInputs');
+                illustrationContainer.innerHTML = `<div class="illustration-container">${flowType === 'splitting' ? splittingSvg : mergingSvg}</div>`;
+                
+                const isSym = type === 'tee_sym';
+                const diameterInputs = isSym ?
+                    `<div class="input-group"><label>Diameter (alle grene)</label><select id="d_in" class="input-field">${roundOptions}</select></div>` :
+                    `<div class="input-field-group">
+                        <div class="input-group"><label id="label_d_in" for="d_in">Ø Ind</label><select id="d_in" class="input-field">${roundOptions}</select></div>
+                        <div class="input-group"><label for="d_straight">Ø Ligeud</label><select id="d_straight" class="input-field">${roundOptions}</select></div>
+                        <div class="input-group"><label for="d_branch">Ø Afgrening</label><select id="d_branch" class="input-field">${roundOptions}</select></div>
+                    </div>`;
+
+                if (flowType === 'splitting') {
+                    container.innerHTML = `
+                        <div class="sub-group"><label>Luftmængder</label><div class="input-field-group"><div class="input-group"><label for="q_in">q Ind</label><div class="input-unit-wrapper" data-unit="m³/h"><input type="text" id="q_in" class="input-field" required></div></div><div class="input-group"><label for="q_straight">q Ligeud</label><div class="input-unit-wrapper" data-unit="m³/h"><input type="text" id="q_straight" class="input-field" required></div></div><div class="input-group"><label for="q_branch">q Afgrening</label><div class="input-unit-wrapper" data-unit="m³/h"><input type="text" id="q_branch" class="input-field" required></div></div></div></div>
+                        <div class="sub-group">${diameterInputs}</div>
+                    `;
+                    if (!isSym) document.getElementById('label_d_in').innerText = 'Ø Ind';
+                } else { // merging
+                    container.innerHTML = `
+                        <div class="sub-group"><label>Luftmængder</label><div class="input-field-group"><div class="input-group"><label for="q_straight">q Ligeud (Ind)</label><div class="input-unit-wrapper" data-unit="m³/h"><input type="text" id="q_straight" class="input-field" required></div></div><div class="input-group"><label for="q_branch">q Afgrening (Ind)</label><div class="input-unit-wrapper" data-unit="m³/h"><input type="text" id="q_branch" class="input-field" required></div></div></div></div>
+                        <div class="sub-group">${diameterInputs}</div>
+                    `;
+                    if (!isSym) document.getElementById('label_d_in').innerText = 'Ø Ud';
+                }
+            };
+            
+            setTimeout(() => {
+                document.getElementsByName('fitTeeFlowType').forEach(r => r.addEventListener('change', updateTeeUI));
+                updateTeeUI();
+            }, 0);
+            break;
             }
             if (illustrationSvg) {
                 illustrationContainer.innerHTML = `<div class="illustration-container">${illustrationSvg}</div>`;
@@ -673,24 +712,33 @@
                 const type = fittingTypeSelect.value;
                 let fittingResult = {};
 
-                if (type.startsWith('tee')) {
-                    if (type === 'tee_bullhead') {
-                        const q_in = parseLocalFloat(document.getElementById('q_in').value), q_out1 = parseLocalFloat(document.getElementById('q_out1').value), q_out2 = parseLocalFloat(document.getElementById('q_out2').value);
-                        if (Math.abs(q_in - (q_out1 + q_out2)) > 1) throw new Error("Luftmængderne stemmer ikke overens (Ind ≈ Ud 1 + Ud 2).");
-                        const d_in = parseLocalFloat(document.getElementById('d_in').value), d_out1 = parseLocalFloat(document.getElementById('d_out1').value), d_out2 = parseLocalFloat(document.getElementById('d_out2').value);
-                        if (isNaN(d_in) || isNaN(d_out1) || isNaN(d_out2)) throw new Error("Ugyldige diametre.");
-                        const results = calculateBullheadTeeLoss({q_in, q_out1, q_out2}, {d_in, d_out1, d_out2}, RHO);
-                        fittingsList.push({ id: Date.now(), name: `Dobbelt Afgr. (Ud 1)`, airflow: q_out1, pressureLoss: results.loss1, details: results.details1, type: 'tee' });
-                        fittingsList.push({ id: Date.now() + 1, name: `Dobbelt Afgr. (Ud 2)`, airflow: q_out2, pressureLoss: results.loss2, details: results.details2, type: 'tee' });
-                    } else { // tee_sym or tee_asym
+                } else if (type.startsWith('tee')) {
+                    const flowType = document.querySelector('input[name="fitTeeFlowType"]:checked').value;
+                    const isSym = type === 'tee_sym';
+                    
+                    if (flowType === 'splitting') {
                         const q_in = parseLocalFloat(document.getElementById('q_in').value), q_straight = parseLocalFloat(document.getElementById('q_straight').value), q_branch = parseLocalFloat(document.getElementById('q_branch').value);
                         if (Math.abs(q_in - (q_straight + q_branch)) > 1) throw new Error("Luftmængderne stemmer ikke overens (Ind ≈ Ligeud + Afgrening).");
-                        const d_in = parseLocalFloat(document.getElementById('d_in').value), d_straight = type === 'tee_sym' ? d_in : parseLocalFloat(document.getElementById('d_straight').value), d_branch = type === 'tee_sym' ? d_in : parseLocalFloat(document.getElementById('d_branch').value);
-                        if (isNaN(d_in) || isNaN(d_straight) || isNaN(d_branch) || d_in <= 0 || d_straight <= 0 || d_branch <= 0) throw new Error("Ugyldige diametre for T-stykke.");
+                        
+                        const d_in = parseLocalFloat(document.getElementById('d_in').value);
+                        const d_straight = isSym ? d_in : parseLocalFloat(document.getElementById('d_straight').value);
+                        const d_branch = isSym ? d_in : parseLocalFloat(document.getElementById('d_branch').value);
+                        
                         const results = calculateTeePressureLoss({q_in, q_straight, q_branch}, {d_in, d_straight, d_branch}, RHO);
-                        const name_base = type === 'tee_sym' ? `T-stykke Sym. Ø${d_in}` : `T-stykke Asym.`;
+                        const name_base = isSym ? `T-stykke Sym. Ø${d_in}` : `T-stykke Asym.`;
                         fittingsList.push({ id: Date.now(), name: `${name_base} (Ligeud)`, airflow: q_straight, pressureLoss: results.loss_straight, details: results.details_straight, type: 'tee' });
                         fittingsList.push({ id: Date.now() + 1, name: `${name_base} (Afgrening)`, airflow: q_branch, pressureLoss: results.loss_branch, details: results.details_branch, type: 'tee' });
+                    } else { // merging
+                        const q_straight = parseLocalFloat(document.getElementById('q_straight').value), q_branch = parseLocalFloat(document.getElementById('q_branch').value);
+                        
+                        const d_common = parseLocalFloat(document.getElementById('d_in').value);
+                        const d_straight = isSym ? d_common : parseLocalFloat(document.getElementById('d_straight').value);
+                        const d_branch = isSym ? d_common : parseLocalFloat(document.getElementById('d_branch').value);
+                        
+                        const results = calculateConvergingTeePressureLoss({q_straight, q_branch}, {d_common, d_straight, d_branch}, RHO);
+                        const name_base = isSym ? `T-stykke Udsugning Sym. Ø${d_common}` : `T-stykke Udsugning Asym.`;
+                        fittingsList.push({ id: Date.now(), name: `${name_base} (fra Ligeud)`, airflow: q_straight, pressureLoss: results.loss_straight, details: results.details_straight, type: 'tee' });
+                        fittingsList.push({ id: Date.now() + 1, name: `${name_base} (fra Afgrening)`, airflow: q_branch, pressureLoss: results.loss_branch, details: results.details_branch, type: 'tee' });
                     }
                 } else { // All other fittings
                     const q_m3h = parseLocalFloat(document.getElementById('fit_airflow').value);
