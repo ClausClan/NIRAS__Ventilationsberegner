@@ -712,49 +712,47 @@
                 const type = fittingTypeSelect.value;
                 let fittingResult = {};
 
-if (type.startsWith('tee')) {
-    const isBullhead = type === 'tee_bullhead';
+                if (type.startsWith('tee')) {
+                    const isBullhead = type === 'tee_bullhead';
+                    if (isBullhead) {
+                        // Bullhead logic remains the same
+                        const q_in = parseLocalFloat(document.getElementById('q_in').value), q_out1 = parseLocalFloat(document.getElementById('q_out1').value), q_out2 = parseLocalFloat(document.getElementById('q_out2').value);
+                        if (Math.abs(q_in - (q_out1 + q_out2)) > 1) throw new Error("Luftmængderne stemmer ikke overens (Ind ≈ Ud 1 + Ud 2).");
+                        const d_in = parseLocalFloat(document.getElementById('d_in').value), d_out1 = parseLocalFloat(document.getElementById('d_out1').value), d_out2 = parseLocalFloat(document.getElementById('d_out2').value);
+                        if (isNaN(d_in) || isNaN(d_out1) || isNaN(d_out2)) throw new Error("Ugyldige diametre.");
+                        const results = calculateBullheadTeeLoss({q_in, q_out1, q_out2}, {d_in, d_out1, d_out2}, RHO);
+                        fittingsList.push({ id: Date.now(), name: `Dobbelt Afgr. (Ud 1)`, airflow: q_out1, pressureLoss: results.loss1, details: results.details1, type: 'tee' });
+                        fittingsList.push({ id: Date.now() + 1, name: `Dobbelt Afgr. (Ud 2)`, airflow: q_out2, pressureLoss: results.loss2, details: results.details2, type: 'tee' });
 
-    if (isBullhead) {
-        // Bullhead logic remains the same
-        const q_in = parseLocalFloat(document.getElementById('q_in').value), q_out1 = parseLocalFloat(document.getElementById('q_out1').value), q_out2 = parseLocalFloat(document.getElementById('q_out2').value);
-        if (Math.abs(q_in - (q_out1 + q_out2)) > 1) throw new Error("Luftmængderne stemmer ikke overens (Ind ≈ Ud 1 + Ud 2).");
-        const d_in = parseLocalFloat(document.getElementById('d_in').value), d_out1 = parseLocalFloat(document.getElementById('d_out1').value), d_out2 = parseLocalFloat(document.getElementById('d_out2').value);
-        if (isNaN(d_in) || isNaN(d_out1) || isNaN(d_out2)) throw new Error("Ugyldige diametre.");
-        const results = calculateBullheadTeeLoss({q_in, q_out1, q_out2}, {d_in, d_out1, d_out2}, RHO);
-        fittingsList.push({ id: Date.now(), name: `Dobbelt Afgr. (Ud 1)`, airflow: q_out1, pressureLoss: results.loss1, details: results.details1, type: 'tee' });
-        fittingsList.push({ id: Date.now() + 1, name: `Dobbelt Afgr. (Ud 2)`, airflow: q_out2, pressureLoss: results.loss2, details: results.details2, type: 'tee' });
-
-            } else { // tee_sym or tee_asym
-                const flowType = document.querySelector('input[name="fitTeeFlowType"]:checked').value;
-                const isSym = type === 'tee_sym';
+                    } else { // tee_sym or tee_asym
+                        const flowType = document.querySelector('input[name="fitTeeFlowType"]:checked').value;
+                        const isSym = type === 'tee_sym';
                 
-                if (flowType === 'splitting') {
-                    const q_in = parseLocalFloat(document.getElementById('q_in').value), q_straight = parseLocalFloat(document.getElementById('q_straight').value), q_branch = parseLocalFloat(document.getElementById('q_branch').value);
-                    if (Math.abs(q_in - (q_straight + q_branch)) > 1) throw new Error("Luftmængderne stemmer ikke overens (Ind ≈ Ligeud + Afgrening).");
-                    
-                    const d_in = parseLocalFloat(document.getElementById('d_in').value);
-                    const d_straight = isSym ? d_in : parseLocalFloat(document.getElementById('d_straight').value);
-                    const d_branch = isSym ? d_in : parseLocalFloat(document.getElementById('d_branch').value);
-                    
-                    const results = calculateTeePressureLoss({q_in, q_straight, q_branch}, {d_in, d_straight, d_branch}, RHO);
-                    const name_base = isSym ? `T-stykke Sym. Ø${d_in}` : `T-stykke Asym.`;
-                    fittingsList.push({ id: Date.now(), name: `${name_base} (Ligeud)`, airflow: q_straight, pressureLoss: results.loss_straight, details: results.details_straight, type: 'tee' });
-                    fittingsList.push({ id: Date.now() + 1, name: `${name_base} (Afgrening)`, airflow: q_branch, pressureLoss: results.loss_branch, details: results.details_branch, type: 'tee' });
-                } else { // merging
-                    const q_straight = parseLocalFloat(document.getElementById('q_straight').value), q_branch = parseLocalFloat(document.getElementById('q_branch').value);
-                    
-                    const d_common = parseLocalFloat(document.getElementById('d_in').value);
-                    const d_straight = isSym ? d_common : parseLocalFloat(document.getElementById('d_straight').value);
-                    const d_branch = isSym ? d_common : parseLocalFloat(document.getElementById('d_branch').value);
-                    
-                    const results = calculateConvergingTeePressureLoss({q_straight, q_branch}, {d_common, d_straight, d_branch}, RHO);
-                    const name_base = isSym ? `T-stykke Udsugning Sym. Ø${d_common}` : `T-stykke Udsugning Asym.`;
-                    fittingsList.push({ id: Date.now(), name: `${name_base} (fra Ligeud)`, airflow: q_straight, pressureLoss: results.loss_straight, details: results.details_straight, type: 'tee' });
-                    fittingsList.push({ id: Date.now() + 1, name: `${name_base} (fra Afgrening)`, airflow: q_branch, pressureLoss: results.loss_branch, details: results.details_branch, type: 'tee' });
-                }
-            }
-        }
+                        if (flowType === 'splitting') {
+                            const q_in = parseLocalFloat(document.getElementById('q_in').value), q_straight = parseLocalFloat(document.getElementById('q_straight').value), q_branch = parseLocalFloat(document.getElementById('q_branch').value);
+                            if (Math.abs(q_in - (q_straight + q_branch)) > 1) throw new Error("Luftmængderne stemmer ikke overens (Ind ≈ Ligeud + Afgrening).");
+                            
+                            const d_in = parseLocalFloat(document.getElementById('d_in').value);
+                            const d_straight = isSym ? d_in : parseLocalFloat(document.getElementById('d_straight').value);
+                            const d_branch = isSym ? d_in : parseLocalFloat(document.getElementById('d_branch').value);
+                            
+                            const results = calculateTeePressureLoss({q_in, q_straight, q_branch}, {d_in, d_straight, d_branch}, RHO);
+                            const name_base = isSym ? `T-stykke Sym. Ø${d_in}` : `T-stykke Asym.`;
+                            fittingsList.push({ id: Date.now(), name: `${name_base} (Ligeud)`, airflow: q_straight, pressureLoss: results.loss_straight, details: results.details_straight, type: 'tee' });
+                            fittingsList.push({ id: Date.now() + 1, name: `${name_base} (Afgrening)`, airflow: q_branch, pressureLoss: results.loss_branch, details: results.details_branch, type: 'tee' });
+                        } else { // merging
+                            const q_straight = parseLocalFloat(document.getElementById('q_straight').value), q_branch = parseLocalFloat(document.getElementById('q_branch').value);
+                            
+                            const d_common = parseLocalFloat(document.getElementById('d_in').value);
+                            const d_straight = isSym ? d_common : parseLocalFloat(document.getElementById('d_straight').value);
+                            const d_branch = isSym ? d_common : parseLocalFloat(document.getElementById('d_branch').value);
+                            
+                            const results = calculateConvergingTeePressureLoss({q_straight, q_branch}, {d_common, d_straight, d_branch}, RHO);
+                            const name_base = isSym ? `T-stykke Udsugning Sym. Ø${d_common}` : `T-stykke Udsugning Asym.`;
+                            fittingsList.push({ id: Date.now(), name: `${name_base} (fra Ligeud)`, airflow: q_straight, pressureLoss: results.loss_straight, details: results.details_straight, type: 'tee' });
+                            fittingsList.push({ id: Date.now() + 1, name: `${name_base} (fra Afgrening)`, airflow: q_branch, pressureLoss: results.loss_branch, details: results.details_branch, type: 'tee' });
+                        }
+                    }
                 } else { // All other fittings
                     const q_m3h = parseLocalFloat(document.getElementById('fit_airflow').value);
                     if (isNaN(q_m3h) || q_m3h <= 0) throw new Error("Ugyldig luftmængde.");
