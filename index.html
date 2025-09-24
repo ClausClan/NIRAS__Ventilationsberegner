@@ -428,8 +428,8 @@
             // Inject HTML for all tabs
             document.getElementById('dimensioning').innerHTML = getDimFormHtml();
             document.getElementById('fittings').innerHTML = getFittingsFormHtml();
-            document.getElementById('system').innerHTML = getSystemFormHtml(); // Added this line
-        
+            document.getElementById('system').innerHTML = getSystemFormHtml(); // This line builds the system tab
+
             // Get elements for Dimensioning tab
             ventilationForm = document.getElementById('ventilationForm');
             dimResultsContainer = document.getElementById('dim_resultsContainer');
@@ -499,6 +499,7 @@
             document.documentElement.setAttribute('data-theme', savedTheme);
             themeToggle.checked = savedTheme === 'dark';
         }
+        
         function updateDimUI() {
             const mode = document.querySelector('input[name="calculationMode"]:checked').value;
             const shape = document.querySelector('input[name="ductShape"]:checked').value;
