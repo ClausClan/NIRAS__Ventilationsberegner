@@ -696,38 +696,42 @@ function handleFittingCalculation(event) {
 
         if (type.startsWith('tee')) {
             const isBullhead = type === 'tee_bullhead';
+            const flowType = document.querySelector('input[name="fitTeeFlowType"]:checked').value;
+
             if (isBullhead) {
-                // Bullhead logic remains the same
-                const q_in = parseLocalFloat(document.getElementById('q_in').value), q_out1 = parseLocalFloat(document.getElementById('q_out1').value), q_out2 = parseLocalFloat(document.getElementById('q_out2').value);
-                if (Math.abs(q_in - (q_out1 + q_out2)) > 1) throw new Error("Luftmængderne stemmer ikke overens (Ind ≈ Ud 1 + Ud 2).");
-                const d_in = parseLocalFloat(document.getElementById('d_in').value), d_out1 = parseLocalFloat(document.getElementById('d_out1').value), d_out2 = parseLocalFloat(document.getElementById('d_out2').value);
-                if (isNaN(d_in) || isNaN(d_out1) || isNaN(d_out2)) throw new Error("Ugyldige diametre.");
-                const results = calculateBullheadTeeLoss({q_in, q_out1, q_out2}, {d_in, d_out1, d_out2}, RHO);
-                fittingsList.push({ id: Date.now(), name: `Dobbelt Afgr. (Ud 1)`, airflow: q_out1, pressureLoss: results.loss1, details: results.details1, type: 'tee' });
-                fittingsList.push({ id: Date.now() + 1, name: `Dobbelt Afgr. (Ud 2)`, airflow: q_out2, pressureLoss: results.loss2, details: results.details2, type: 'tee' });
+                if (flowType === 'splitting') {
+                    const q_in = parseLocalFloat(document.getElementById('q_in').value), q_out1 = parseLocalFloat(document.getElementById('q_out1').value), q_out2 = parseLocalFloat(document.getElementById('q_out2').value);
+                    if (Math.abs(q_in - (q_out1 + q_out2)) > 1) throw new Error("Luftmængderne stemmer ikke overens (Ind ≈ Ud 1 + Ud 2).");
+                    const d_in = parseLocalFloat(document.getElementById('d_in').value), d_out1 = parseLocalFloat(document.getElementById('d_out1').value), d_out2 = parseLocalFloat(document.getElementById('d_out2').value);
+                    if (isNaN(d_in) || isNaN(d_out1) || isNaN(d_out2)) throw new Error("Ugyldige diametre.");
+                    const results = calculateBullheadTeeLoss({q_in, q_out1, q_out2}, {d_in, d_out1, d_out2}, RHO);
+                    fittingsList.push({ id: Date.now(), name: `Dobbelt Afgr. (Ud 1)`, airflow: q_out1, pressureLoss: results.loss1, details: results.details1, type: 'tee_bullhead' });
+                    fittingsList.push({ id: Date.now() + 1, name: `Dobbelt Afgr. (Ud 2)`, airflow: q_out2, pressureLoss: results.loss2, details: results.details2, type: 'tee_bullhead' });
+                } else { // merging
+                    const q_in1 = parseLocalFloat(document.getElementById('q_in1').value), q_in2 = parseLocalFloat(document.getElementById('q_in2').value);
+                    const d_in1 = parseLocalFloat(document.getElementById('d_in1').value), d_in2 = parseLocalFloat(document.getElementById('d_in2').value), d_common = parseLocalFloat(document.getElementById('d_common').value);
+                    if (isNaN(d_in1) || isNaN(d_in2) || isNaN(d_common)) throw new Error("Ugyldige diametre.");
+                    const results = calculateConvergingBullheadTeeLoss({q_in1, q_in2}, {d_in1, d_in2, d_common}, RHO);
+                    fittingsList.push({ id: Date.now(), name: `Dobbelt Samling (fra Ind 1)`, airflow: q_in1, pressureLoss: results.loss1, details: results.details1, type: 'tee_bullhead_merge' });
+                    fittingsList.push({ id: Date.now() + 1, name: `Dobbelt Samling (fra Ind 2)`, airflow: q_in2, pressureLoss: results.loss2, details: results.details2, type: 'tee_bullhead_merge' });
+                }
             } else { // tee_sym or tee_asym
-                const flowType = document.querySelector('input[name="fitTeeFlowType"]:checked').value;
                 const isSym = type === 'tee_sym';
-                
                 if (flowType === 'splitting') {
                     const q_in = parseLocalFloat(document.getElementById('q_in').value), q_straight = parseLocalFloat(document.getElementById('q_straight').value), q_branch = parseLocalFloat(document.getElementById('q_branch').value);
                     if (Math.abs(q_in - (q_straight + q_branch)) > 1) throw new Error("Luftmængderne stemmer ikke overens (Ind ≈ Ligeud + Afgrening).");
-                    
                     const d_in = parseLocalFloat(document.getElementById('d_in').value);
                     const d_straight = isSym ? d_in : parseLocalFloat(document.getElementById('d_straight').value);
                     const d_branch = isSym ? d_in : parseLocalFloat(document.getElementById('d_branch').value);
-                    
                     const results = calculateTeePressureLoss({q_in, q_straight, q_branch}, {d_in, d_straight, d_branch}, RHO);
                     const name_base = isSym ? `T-stykke Sym. Ø${d_in}` : `T-stykke Asym.`;
                     fittingsList.push({ id: Date.now(), name: `${name_base} (Ligeud)`, airflow: q_straight, pressureLoss: results.loss_straight, details: results.details_straight, type: 'tee' });
                     fittingsList.push({ id: Date.now() + 1, name: `${name_base} (Afgrening)`, airflow: q_branch, pressureLoss: results.loss_branch, details: results.details_branch, type: 'tee' });
                 } else { // merging
                     const q_straight = parseLocalFloat(document.getElementById('q_straight').value), q_branch = parseLocalFloat(document.getElementById('q_branch').value);
-                    
                     const d_common = parseLocalFloat(document.getElementById('d_in').value);
                     const d_straight = isSym ? d_common : parseLocalFloat(document.getElementById('d_straight').value);
                     const d_branch = isSym ? d_common : parseLocalFloat(document.getElementById('d_branch').value);
-                    
                     const results = calculateConvergingTeePressureLoss({q_straight, q_branch}, {d_common, d_straight, d_branch}, RHO);
                     const name_base = isSym ? `T-stykke Udsugning Sym. Ø${d_common}` : `T-stykke Udsugning Asym.`;
                     fittingsList.push({ id: Date.now(), name: `${name_base} (fra Ligeud)`, airflow: q_straight, pressureLoss: results.loss_straight, details: results.details_straight, type: 'tee' });
@@ -740,47 +744,47 @@ function handleFittingCalculation(event) {
             const Q = q_m3h / 3600;
             let name, zeta, A, v, d_hyd, Pdyn_Pa, loss, details = {};
 
-                    switch(type) {
-                        case 'bend_circ':
-                            const d = parseLocalFloat(document.getElementById('d').value), angle = parseLocalFloat(document.getElementById('angle').value), rd = parseLocalFloat(document.getElementById('rd').value);
-                            const rd_key = rd < 1.25 ? "rd1_0" : "rd1_5";
-                            const zeta_table = CIRCULAR_BEND_ZETA[rd_key];
-                            zeta = interpolateValue(angle, d, zeta_table);
-                            d_hyd = getInternalDim(d)/1000;
-                            A = Math.PI * (d_hyd/2)**2;
-                            v = Q/A;
-                            name = `Bøjning Cirk. Ø${d}`;
-                            break;
-                        case 'bend_rect':
-                            const h = parseLocalFloat(document.getElementById('h').value), w = parseLocalFloat(document.getElementById('w').value), angle_r = parseLocalFloat(document.getElementById('angle').value), rh = parseLocalFloat(document.getElementById('rh').value);
-                            const hw_ratio = h/w;
-                            const zeta_base = interpolateValue(hw_ratio, rh, RECTANGULAR_BEND_ZETA.mainTable);
-                            const k_factor = interpolateValue(angle_r, null, RECTANGULAR_BEND_ZETA.kFactor);
-                            zeta = zeta_base * k_factor;
-                            let h_int = getInternalDim(h)/1000, w_int = getInternalDim(w)/1000;
-                            d_hyd = (2 * h_int * w_int) / (h_int + w_int);
-                            A = Math.PI * (d_hyd/2)**2; // Ækvivalent areal
-                            v = Q/A;
-                            name = `Bøjning Rekt. ${h}x${w}`;
-                            break;
-                        case 'expansion':
-                            const d1_exp = parseLocalFloat(document.getElementById('d1').value), d2_exp = parseLocalFloat(document.getElementById('d2').value), angle_exp = parseLocalFloat(document.getElementById('angle').value);
-                            const A1 = Math.PI * (getInternalDim(d1_exp)/2000)**2, A2 = Math.PI * (getInternalDim(d2_exp)/2000)**2;
-                            const area_ratio_exp = A2/A1;
-                            zeta = interpolateValue(angle_exp, area_ratio_exp, EXPANSION_ZETA);
-                            v = Q/A1; // Use inlet velocity for expansion
-                            A = A1;
-                            name = `Udvidelse Ø${d1_exp}-Ø${d2_exp}`;
-                            break;
-                         case 'contraction':
-                            const d1_con = parseLocalFloat(document.getElementById('d1').value), d2_con = parseLocalFloat(document.getElementById('d2').value), angle_con = parseLocalFloat(document.getElementById('angle').value);
-                            const A1_con = Math.PI * (getInternalDim(d1_con)/2000)**2, A2_con = Math.PI * (getInternalDim(d2_con)/2000)**2;
-                            const area_ratio_con = A2_con/A1_con;
-                            zeta = interpolateValue(angle_con, area_ratio_con, CONTRACTION_ZETA);
-                            v = Q/A2_con; // Use outlet velocity for contraction
-                            A = A2_con;
-                            name = `Indsnævring Ø${d1_con}-Ø${d2_con}`;
-                            break;
+            switch(type) {
+                case 'bend_circ':
+                    const d = parseLocalFloat(document.getElementById('d').value), angle = parseLocalFloat(document.getElementById('angle').value), rd = parseLocalFloat(document.getElementById('rd').value);
+                    const rd_key = rd < 1.25 ? "rd1_0" : "rd1_5";
+                    const zeta_table = CIRCULAR_BEND_ZETA[rd_key];
+                    zeta = interpolateValue(angle, d, zeta_table);
+                    d_hyd = getInternalDim(d)/1000;
+                    A = Math.PI * (d_hyd/2)**2;
+                    v = Q/A;
+                    name = `Bøjning Cirk. Ø${d}`;
+                    break;
+                case 'bend_rect':
+                    const h = parseLocalFloat(document.getElementById('h').value), w = parseLocalFloat(document.getElementById('w').value), angle_r = parseLocalFloat(document.getElementById('angle').value), rh = parseLocalFloat(document.getElementById('rh').value);
+                    const hw_ratio = h/w;
+                    const zeta_base = interpolateValue(hw_ratio, rh, RECTANGULAR_BEND_ZETA.mainTable);
+                    const k_factor = interpolateValue(angle_r, null, RECTANGULAR_BEND_ZETA.kFactor);
+                    zeta = zeta_base * k_factor;
+                    let h_int = getInternalDim(h)/1000, w_int = getInternalDim(w)/1000;
+                    d_hyd = (2 * h_int * w_int) / (h_int + w_int);
+                    A = Math.PI * (d_hyd/2)**2;
+                    v = Q/A;
+                    name = `Bøjning Rekt. ${h}x${w}`;
+                    break;
+                case 'expansion':
+                    const d1_exp = parseLocalFloat(document.getElementById('d1').value), d2_exp = parseLocalFloat(document.getElementById('d2').value), angle_exp = parseLocalFloat(document.getElementById('angle').value);
+                    const A1 = Math.PI * (getInternalDim(d1_exp)/2000)**2, A2 = Math.PI * (getInternalDim(d2_exp)/2000)**2;
+                    const area_ratio_exp = A2/A1;
+                    zeta = interpolateValue(angle_exp, area_ratio_exp, EXPANSION_ZETA);
+                    v = Q/A1;
+                    A = A1;
+                    name = `Udvidelse Ø${d1_exp}-Ø${d2_exp}`;
+                    break;
+                 case 'contraction':
+                    const d1_con = parseLocalFloat(document.getElementById('d1').value), d2_con = parseLocalFloat(document.getElementById('d2').value), angle_con = parseLocalFloat(document.getElementById('angle').value);
+                    const A1_con = Math.PI * (getInternalDim(d1_con)/2000)**2, A2_con = Math.PI * (getInternalDim(d2_con)/2000)**2;
+                    const area_ratio_con = A2_con/A1_con;
+                    zeta = interpolateValue(angle_con, area_ratio_con, CONTRACTION_ZETA);
+                    v = Q/A2_con;
+                    A = A2_con;
+                    name = `Indsnævring Ø${d1_con}-Ø${d2_con}`;
+                    break;
             }
             
             Pdyn_Pa = (RHO / 2) * v ** 2;
