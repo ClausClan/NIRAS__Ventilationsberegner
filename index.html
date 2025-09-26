@@ -1308,7 +1308,7 @@ function handleAddComponent(event) {
                         newAirflow = q_straight; 
                         name = `T-stykke (Ligeud)`; 
                         details = `q=${q_straight} m³/h`;
-                        newComponent.airflow = q_straight; // BUG FIX
+                        newComponent.airflow = q_straight; // <-- BUG FIX
                     } else {
                         pressureLoss = teeResults.loss_branch; 
                         velocity = teeResults.details_branch.v_ms; 
@@ -1316,7 +1316,7 @@ function handleAddComponent(event) {
                         newAirflow = q_branch; 
                         name = `T-stykke (Afgrening)`; 
                         details = `q=${q_branch} m³/h`;
-                        newComponent.airflow = q_branch; // BUG FIX
+                        newComponent.airflow = q_branch; // <-- BUG FIX
                     }
                     document.getElementById('system_airflow').value = formatLocalFloat(newAirflow, 0);
                 } else { // merging
@@ -1337,9 +1337,10 @@ function handleAddComponent(event) {
                 }
                 newComponent = { ...newComponent, type: fittingType, name, details, velocity, pressureLoss, calculationDetails };
 
-            } else { // This block handles non-Tee fittings
+            } else {
+                // Logic for non-Tee fittings (bends, etc.)
                 newComponent.airflow = airflow; // Use the current system airflow
-                let zeta, A, v, Pdyn_Pa, loss, details, name, calculationDetails;
+                let zeta, A, v, Pdyn_Pa, loss, calculationDetails, name, details;
                 
                 switch(fittingType) {
                     case 'bend_circ':
@@ -1418,8 +1419,9 @@ function handleAddComponent(event) {
                         newComponent = { ...newComponent, name, details, velocity, pressureLoss: loss, calculationDetails };
                         break;
                 }
+                }
+                newComponent = { ...newComponent, type: fittingType, name, details, velocity, pressureLoss, calculationDetails };
             }
-            newComponent = { ...newComponent, type: fittingType, name, details, velocity, pressureLoss, calculationDetails };
         }
     }
     catch (e) {
