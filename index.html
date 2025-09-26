@@ -1237,184 +1237,186 @@ case 'tee_sym':
     }
 }
         
+/**
+ * Håndterer tilføjelsen af en ny komponent til systemberegningen.
+ * Den læser input fra brugerfladen, beregner tryktab og opdaterer systemets tilstand.
+ * @param {Event} event - Formens 'submit'-event.
+ */
 function handleAddComponent(event) {
-    event.preventDefault();
-    const componentType = systemComponentTypeSelect.value;
+    event.preventDefault(); // Forhindrer siden i at genindlæse
 
-    let airflow = parseLocalFloat(document.getElementById('system_airflow').value);
+    // --- 1. Indsaml og valider basis-input ---
+    const componentType = document.getElementById('systemComponentType').value;
+    if (!componentType) {
+        alert('Vælg venligst en komponenttype.');
+        return;
+    }
+
+    const airflow = parseLocalFloat(document.getElementById('system_airflow').value);
     const temp = parseLocalFloat(document.getElementById('temperature').value);
+
     if (isNaN(airflow) || isNaN(temp) || airflow <= 0) {
         alert('Udfyld venligst Start Luftmængde og global Temperatur korrekt.');
         return;
     }
+
+    // Hent luftens fysiske egenskaber
     const { RHO, NU } = getAirProperties(temp);
-    let Q = airflow / 3600;
+    const Q = airflow / 3600; // Konverter fra m³/h til m³/s
 
-    let newComponent = { id: Date.now(), airflow: airflow };
+    // Forbered det nye komponent-objekt
+    const newComponent = {
+        id: Date.now(),
+        airflow: airflow,
+        type: componentType
+    };
 
+    // --- 2. Beregn tryktab baseret på komponenttype ---
     try {
         if (componentType === 'straightDuct') {
             const length = parseLocalFloat(document.getElementById('ductLength').value);
-            if (isNaN(length) || length <= 0) { alert('Udfyld venligst Længde korrekt.'); return; }
-            
+            if (isNaN(length) || length <= 0) throw new Error('Ugyldig længde for lige kanal.');
+
             const shape = document.querySelector('input[name="sysDuctShape"]:checked').value;
-            let performance, name, details;
+            let performance;
 
             if (shape === 'round') {
                 const diameter = parseLocalFloat(document.getElementById('ductDiameter').value);
                 performance = getPerformance(Q, diameter / 1000, { shape: 'round' }, RHO, NU);
-                name = `Lige Kanal Ø${diameter}`;
-                details = `${length}m`;
+                newComponent.name = `Lige Kanal Ø${diameter}`;
+                newComponent.details = `${formatLocalFloat(length, 1)}m`;
             } else {
                 const sideA = parseLocalFloat(document.getElementById('ductSideA').value);
                 const sideB = parseLocalFloat(document.getElementById('ductSideB').value);
                 performance = getPerformance(Q, 0, { shape: 'rect', a: sideA, b: sideB }, RHO, NU);
-                name = `Lige Kanal ${sideA}x${sideB}`;
-                details = `${length}m`;
+                newComponent.name = `Lige Kanal ${sideA}x${sideB}`;
+                newComponent.details = `${formatLocalFloat(length, 1)}m`;
             }
-            newComponent = { ...newComponent, type: 'straightDuct', name, details, velocity: performance.velocity, pressureLoss: performance.pressureDrop * length, calculationDetails: { ...performance, length: length, RHO: RHO } };
+
+            newComponent.velocity = performance.velocity;
+            newComponent.pressureLoss = performance.pressureDrop * length;
+            newComponent.calculationDetails = { ...performance, length: length };
 
         } else if (componentType === 'manualLoss') {
-            const name = document.getElementById('manualLossName').value || 'Manuelt Tab';
-            const pressureLoss = parseLocalFloat(document.getElementById('manualLossValue').value);
-            if (isNaN(pressureLoss)) { alert('Indtast venligst et gyldigt tryktab.'); return; }
-            newComponent = { ...newComponent, type: 'manualLoss', name, details: '', velocity: null, pressureLoss: pressureLoss, calculationDetails: null };
+            newComponent.name = document.getElementById('manualLossName').value || 'Manuelt Tab';
+            newComponent.pressureLoss = parseLocalFloat(document.getElementById('manualLossValue').value);
+            if (isNaN(newComponent.pressureLoss)) throw new Error('Ugyldigt manuelt tryktab.');
+            newComponent.details = '';
+            newComponent.velocity = null;
+            newComponent.calculationDetails = null;
 
-        } else if (componentType === 'fitting') {
-            const fittingType = document.getElementById('systemFittingType').value;
-            if (!fittingType) { alert('Vælg venligst en type formstykke.'); return; }
+        } else if (componentType.startsWith('tee_')) { // Samlet logik for T-stykker
+            const flowType = document.querySelector('input[name="sysTeeFlowType"]:checked').value;
+            const q_straight = parseLocalFloat(document.getElementById('sys_tee_q_straight').value);
+            const q_branch = parseLocalFloat(document.getElementById('sys_tee_q_branch').value);
+            const isSymTee = componentType === 'tee_sym';
 
-            let name, details, velocity, pressureLoss, calculationDetails;
-            let zeta, A, v, Pdyn_Pa;
+            const d_in_common = parseLocalFloat(document.getElementById('sys_tee_d_in').value);
+            const d_straight = isSymTee ? d_in_common : parseLocalFloat(document.getElementById('sys_tee_d_straight').value);
+            const d_branch = isSymTee ? d_in_common : parseLocalFloat(document.getElementById('sys_tee_d_branch').value);
 
-            if (fittingType.startsWith('tee')) {
-                const flowType = document.querySelector('input[name="sysTeeFlowType"]:checked').value;
-                const q_straight = parseLocalFloat(document.getElementById('sys_tee_q_straight').value);
-                const q_branch = parseLocalFloat(document.getElementById('sys_tee_q_branch').value);
-                const isSymTee = fittingType === 'tee_sym';
-
-                if (flowType === 'splitting') {
-                    const q_in = airflow;
-                    if (Math.abs(q_in - (q_straight + q_branch)) > 1) {
-                        alert("Luftmængderne for T-stykket stemmer ikke overens (Ligeud + Afgrening skal summere til systemets nuværende luftmængde)."); return;
-                    }
-                    const d_in = parseLocalFloat(document.getElementById('sys_tee_d_in').value);
-                    const d_straight = isSymTee ? d_in : parseLocalFloat(document.getElementById('sys_tee_d_straight').value);
-                    const d_branch = isSymTee ? d_in : parseLocalFloat(document.getElementById('sys_tee_d_branch').value);
-                    const teeResults = calculateTeePressureLoss({ q_in, q_straight, q_branch }, { d_in, d_straight, d_branch }, RHO);
-                    const chosenPath = document.querySelector('input[name="sysTeePath"]:checked').value;
-                    let newAirflow;
-                    if (chosenPath === 'straight') {
-                        pressureLoss = teeResults.loss_straight; velocity = teeResults.details_straight.v_ms; calculationDetails = { ...teeResults.details_straight, type: fittingType, chosenPath: 'Ligeud' }; newAirflow = q_straight; name = `T-stykke (Ligeud)`; details = `q=${q_straight} m³/h`;
-                    } else {
-                        pressureLoss = teeResults.loss_branch; velocity = teeResults.details_branch.v_ms; calculationDetails = { ...teeResults.details_branch, type: fittingType, chosenPath: 'Afgrening' }; newAirflow = q_branch; name = `T-stykke (Afgrening)`; details = `q=${q_branch} m³/h`;
-                    }
-                    document.getElementById('system_airflow').value = formatLocalFloat(newAirflow, 0);
-                } else { // merging
-                    const d_common = isSymTee ? parseLocalFloat(document.getElementById('sys_tee_d_in').value) : parseLocalFloat(document.getElementById('sys_tee_d_in').value);
-                    const d_straight = isSymTee ? d_common : parseLocalFloat(document.getElementById('sys_tee_d_straight').value);
-                    const d_branch = isSymTee ? d_common : parseLocalFloat(document.getElementById('sys_tee_d_branch').value);
-                    const teeResults = calculateConvergingTeePressureLoss({ q_straight, q_branch }, { d_common, d_straight, d_branch }, RHO);
-                    const chosenPath = document.querySelector('input[name="sysTeePath"]:checked').value;
-                    if (chosenPath === 'straight') {
-                        pressureLoss = teeResults.loss_straight; velocity = teeResults.details_straight.v_ms; calculationDetails = teeResults.details_straight; name = `T-stykke Samle (fra Ligeud)`; details = `q=${q_straight} m³/h`;
-                    } else {
-                        pressureLoss = teeResults.loss_branch; velocity = teeResults.details_branch.v_ms; calculationDetails = teeResults.details_branch; name = `T-stykke Samle (fra Afgrening)`; details = `q=${q_branch} m³/h`;
-                    }
-                    document.getElementById('system_airflow').value = formatLocalFloat(teeResults.q_out, 0);
+            if (flowType === 'splitting') {
+                if (Math.abs(airflow - (q_straight + q_branch)) > 0.1) {
+                    throw new Error("Luftmængder for T-stykke (dele-flow) stemmer ikke overens.");
                 }
-            } else { // This block handles non-Tee fittings
-                newComponent.airflow = airflow; // Use the current system airflow
-                let zeta, A, v, Pdyn_Pa, loss, details, name, calculationDetails;
+                const teeResults = calculateTeePressureLoss({ q_in: airflow, q_straight, q_branch }, { d_in: d_in_common, d_straight, d_branch }, RHO);
+                const chosenPath = document.querySelector('input[name="sysTeePath"]:checked').value;
                 
-                switch(fittingType) {
-                    case 'bend_circ':
-                        const d = parseLocalFloat(document.getElementById('sys_d').value);
-                        const angle = parseLocalFloat(document.getElementById('sys_angle').value);
-                        const rd = parseLocalFloat(document.getElementById('sys_rd').value);
-                        const rd_key = rd < 1.25 ? "rd1_0" : "rd1_5";
-                        zeta = interpolateValue(angle, d, CIRCULAR_BEND_ZETA[rd_key]);
-                        A = Math.PI * (getInternalDim(d)/2000)**2;
-                        v = Q/A;
-                        Pdyn_Pa = (RHO / 2) * v ** 2;
-                        loss = zeta * Pdyn_Pa;
-                        
-                        name = `Bøjning Cirk. Ø${d}`;
-                        details = `${angle}° R/d=${rd}`;
-                        velocity = v;
-                        calculationDetails = { type: fittingType, A_m2: A, v_ms: v, zeta: zeta, Pdyn_Pa: Pdyn_Pa };
-                        newComponent = { ...newComponent, name, details, velocity, pressureLoss: loss, calculationDetails };
-                        break;
-
-                    case 'bend_rect':
-                        const h = parseLocalFloat(document.getElementById('sys_h').value);
-                        const w = parseLocalFloat(document.getElementById('sys_w').value);
-                        const angle_r = parseLocalFloat(document.getElementById('sys_angle_r').value);
-                        const rh = parseLocalFloat(document.getElementById('sys_rh').value);
-                        const zeta_base = interpolateValue(h/w, rh, RECTANGULAR_BEND_ZETA.mainTable);
-                        const k_factor = interpolateValue(angle_r, null, RECTANGULAR_BEND_ZETA.kFactor);
-                        zeta = zeta_base * k_factor;
-                        let h_int = getInternalDim(h)/1000, w_int = getInternalDim(w)/1000;
-                        const d_hyd = (2 * h_int * w_int) / (h_int + w_int);
-                        A = Math.PI * (d_hyd/2)**2;
-                        v = Q/A;
-                        Pdyn_Pa = (RHO / 2) * v ** 2;
-                        loss = zeta * Pdyn_Pa;
-
-                        name = `Bøjning Rekt. ${h}x${w}`;
-                        details = `${angle_r}° R/H=${rh}`;
-                        velocity = v;
-                        calculationDetails = { type: fittingType, A_m2: A, v_ms: v, zeta: zeta, Pdyn_Pa: Pdyn_Pa };
-                        newComponent = { ...newComponent, name, details, velocity, pressureLoss: loss, calculationDetails };
-                        break;
-                    
-                    case 'expansion':
-                        const d1_exp = parseLocalFloat(document.getElementById('sys_d1').value);
-                        const d2_exp = parseLocalFloat(document.getElementById('sys_d2').value);
-                        const angle_exp = parseLocalFloat(document.getElementById('sys_angle_dim').value);
-                        const A1_exp = Math.PI * (getInternalDim(d1_exp)/2000)**2;
-                        const A2_exp = Math.PI * (getInternalDim(d2_exp)/2000)**2;
-                        zeta = interpolateValue(angle_exp, A2_exp/A1_exp, EXPANSION_ZETA);
-                        v = Q/A1_exp; // Use inlet velocity
-                        Pdyn_Pa = (RHO / 2) * v ** 2;
-                        loss = zeta * Pdyn_Pa;
-                        
-                        name = `Udvidelse Ø${d1_exp}-Ø${d2_exp}`;
-                        details = `${angle_exp}°`;
-                        velocity = v;
-                        calculationDetails = { type: fittingType, A_m2: A1_exp, v_ms: v, zeta: zeta, Pdyn_Pa: Pdyn_Pa };
-                        newComponent = { ...newComponent, name, details, velocity, pressureLoss: loss, calculationDetails };
-                        break;
-                    
-                    case 'contraction':
-                        const d1_con = parseLocalFloat(document.getElementById('sys_d1').value);
-                        const d2_con = parseLocalFloat(document.getElementById('sys_d2').value);
-                        const angle_con = parseLocalFloat(document.getElementById('sys_angle_dim').value);
-                        const A1_con = Math.PI * (getInternalDim(d1_con)/2000)**2;
-                        const A2_con = Math.PI * (getInternalDim(d2_con)/2000)**2;
-                        zeta = interpolateValue(angle_con, A2_con/A1_con, CONTRACTION_ZETA);
-                        v = Q/A2_con; // Use outlet velocity
-                        Pdyn_Pa = (RHO / 2) * v ** 2;
-                        loss = zeta * Pdyn_Pa;
-
-                        name = `Indsnævring Ø${d1_con}-Ø${d2_con}`;
-                        details = `${angle_con}°`;
-                        velocity = v;
-                        calculationDetails = { type: fittingType, A_m2: A2_con, v_ms: v, zeta: zeta, Pdyn_Pa: Pdyn_Pa };
-                        newComponent = { ...newComponent, name, details, velocity, pressureLoss: loss, calculationDetails };
-                        break;
+                let newAirflow;
+                if (chosenPath === 'straight') {
+                    Object.assign(newComponent, { name: `T-stykke (Ligeud)`, details: `q=${formatLocalFloat(q_straight,0)} m³/h`, velocity: teeResults.details_straight.v_ms, pressureLoss: teeResults.loss_straight, calculationDetails: { ...teeResults.details_straight, type: componentType, chosenPath: 'Ligeud' } });
+                    newAirflow = q_straight;
+                } else {
+                    Object.assign(newComponent, { name: `T-stykke (Afgrening)`, details: `q=${formatLocalFloat(q_branch,0)} m³/h`, velocity: teeResults.details_branch.v_ms, pressureLoss: teeResults.loss_branch, calculationDetails: { ...teeResults.details_branch, type: componentType, chosenPath: 'Afgrening' } });
+                    newAirflow = q_branch;
                 }
+                document.getElementById('system_airflow').value = formatLocalFloat(newAirflow, 0);
 
-            newComponent = { ...newComponent, type: fittingType, name, details, velocity, pressureLoss, calculationDetails };
+            } else { // Merging flow
+                const teeResults = calculateConvergingTeePressureLoss({ q_straight, q_branch }, { d_common: d_in_common, d_straight, d_branch }, RHO);
+                const chosenPath = document.querySelector('input[name="sysTeePath"]:checked').value;
+
+                if (chosenPath === 'straight') {
+                    Object.assign(newComponent, { name: `T-stykke Samle (fra Ligeud)`, details: `q=${formatLocalFloat(q_straight,0)} m³/h`, velocity: teeResults.details_straight.v_ms, pressureLoss: teeResults.loss_straight, calculationDetails: { ...teeResults.details_straight, type: componentType, chosenPath: 'Ligeud' } });
+                } else {
+                    Object.assign(newComponent, { name: `T-stykke Samle (fra Afgr.)`, details: `q=${formatLocalFloat(q_branch,0)} m³/h`, velocity: teeResults.details_branch.v_ms, pressureLoss: teeResults.loss_branch, calculationDetails: { ...teeResults.details_branch, type: componentType, chosenPath: 'Afgrening' } });
+                }
+                document.getElementById('system_airflow').value = formatLocalFloat(teeResults.q_out, 0);
+            }
+
+        } else { // Alle andre formstykker
+            let zeta, A, v, Pdyn_Pa, loss;
+
+            switch (componentType) {
+                case 'bend_circ': {
+                    const d = parseLocalFloat(document.getElementById('sys_d').value);
+                    const angle = parseLocalFloat(document.getElementById('sys_angle').value);
+                    const rd = parseLocalFloat(document.getElementById('sys_rd').value);
+                    zeta = interpolateValue(angle, d, CIRCULAR_BEND_ZETA[rd < 1.25 ? "rd1_0" : "rd1_5"]);
+                    A = Math.PI * (getInternalDim(d) / 2000) ** 2;
+                    newComponent.name = `Bøjning Cirk. Ø${d}`;
+                    newComponent.details = `${angle}° R/d=${rd}`;
+                    break;
+                }
+                case 'bend_rect': {
+                    const h = parseLocalFloat(document.getElementById('sys_h').value);
+                    const w = parseLocalFloat(document.getElementById('sys_w').value);
+                    const angle_r = parseLocalFloat(document.getElementById('sys_angle_r').value);
+                    const rh = parseLocalFloat(document.getElementById('sys_rh').value);
+                    const zeta_base = interpolateValue(h / w, rh, RECTANGULAR_BEND_ZETA.mainTable);
+                    const k_factor = interpolateValue(angle_r, null, RECTANGULAR_BEND_ZETA.kFactor);
+                    zeta = zeta_base * k_factor;
+                    const d_hyd = (2 * getInternalDim(h) * getInternalDim(w)) / (getInternalDim(h) + getInternalDim(w));
+                    A = Math.PI * (d_hyd / 2000) ** 2; // Ækvivalent areal
+                    newComponent.name = `Bøjning Rekt. ${h}x${w}`;
+                    newComponent.details = `${angle_r}° R/H=${rh}`;
+                    break;
+                }
+                case 'expansion': {
+                    const d1 = parseLocalFloat(document.getElementById('sys_d1').value);
+                    const d2 = parseLocalFloat(document.getElementById('sys_d2').value);
+                    const angle = parseLocalFloat(document.getElementById('sys_angle_dim').value);
+                    const A1 = Math.PI * (getInternalDim(d1) / 2000) ** 2;
+                    const A2 = Math.PI * (getInternalDim(d2) / 2000) ** 2;
+                    zeta = interpolateValue(angle, A2 / A1, EXPANSION_ZETA);
+                    A = A1; // Tryktab baseres på indløbshastighed
+                    newComponent.name = `Udvidelse Ø${d1}-Ø${d2}`;
+                    newComponent.details = `${angle}°`;
+                    break;
+                }
+                case 'contraction': {
+                    const d1 = parseLocalFloat(document.getElementById('sys_d1').value);
+                    const d2 = parseLocalFloat(document.getElementById('sys_d2').value);
+                    const angle = parseLocalFloat(document.getElementById('sys_angle_dim').value);
+                    const A1 = Math.PI * (getInternalDim(d1) / 2000) ** 2;
+                    const A2 = Math.PI * (getInternalDim(d2) / 2000) ** 2;
+                    zeta = interpolateValue(angle, A2 / A1, CONTRACTION_ZETA);
+                    A = A2; // Tryktab baseres på udløbshastighed
+                    newComponent.name = `Indsnævring Ø${d1}-Ø${d2}`;
+                    newComponent.details = `${angle}°`;
+                    break;
+                }
+                default:
+                    throw new Error('Ukendt formstykke valgt i systemberegningen.');
+            }
+
+            v = Q / A;
+            Pdyn_Pa = (RHO / 2) * v ** 2;
+            loss = zeta * Pdyn_Pa;
+
+            newComponent.velocity = v;
+            newComponent.pressureLoss = loss;
+            newComponent.calculationDetails = { type: componentType, A_m2: A, v_ms: v, zeta: zeta, Pdyn_Pa: Pdyn_Pa };
         }
+
+    } catch (e) {
+        alert('Fejl i input-felter. Kontroller venligst værdierne.\n\nFejlmeddelelse: ' + e.message);
+        return; // Stop eksekvering ved fejl
     }
-    catch (e) {
-        alert('Fejl i input-felter. Kontroller venligst værdierne. Fejl: ' + e.message);
-        return;
-    }
-    
+
+    // --- 3. Opdater system og brugerflade ---
     systemComponents.push(newComponent);
-    renderSystem();
+    renderSystem(); // Opdater tabellen med komponenter
 }
         
 function renderSystem() {
