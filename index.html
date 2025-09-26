@@ -1247,7 +1247,7 @@ function handleAddComponent(event) {
     const { RHO, NU } = getAirProperties(temp);
     let Q = airflow / 3600;
 
-    let newComponent = { id: Date.now(), airflow: airflow };
+    let newComponent = { id: Date.now() }; // Airflow will be added specifically below
 
     try {
         if (componentType === 'straightDuct') {
@@ -1269,26 +1269,26 @@ function handleAddComponent(event) {
                 name = `Lige Kanal ${sideA}x${sideB}`;
                 details = `${length}m`;
             }
-            newComponent = { ...newComponent, type: 'straightDuct', name, details, velocity: performance.velocity, pressureLoss: performance.pressureDrop * length, calculationDetails: { ...performance, length: length, RHO: RHO } };
+            newComponent = { ...newComponent, airflow: airflow, type: 'straightDuct', name, details, velocity: performance.velocity, pressureLoss: performance.pressureDrop * length, calculationDetails: { ...performance, length: length, RHO: RHO } };
 
         } else if (componentType === 'manualLoss') {
             const name = document.getElementById('manualLossName').value || 'Manuelt Tab';
             const pressureLoss = parseLocalFloat(document.getElementById('manualLossValue').value);
             if (isNaN(pressureLoss)) { alert('Indtast venligst et gyldigt tryktab.'); return; }
-            newComponent = { ...newComponent, type: 'manualLoss', name, details: '', velocity: null, pressureLoss: pressureLoss, calculationDetails: null };
+            newComponent = { ...newComponent, airflow: 0, type: 'manualLoss', name, details: '', velocity: null, pressureLoss: pressureLoss, calculationDetails: null };
 
         } else if (componentType === 'fitting') {
             const fittingType = document.getElementById('systemFittingType').value;
             if (!fittingType) { alert('Vælg venligst en type formstykke.'); return; }
 
             let name, details, velocity, pressureLoss, calculationDetails;
-            let zeta, A, v, Pdyn_Pa;
-
+            
             if (fittingType.startsWith('tee')) {
                 const flowType = document.querySelector('input[name="sysTeeFlowType"]:checked').value;
                 const q_straight = parseLocalFloat(document.getElementById('sys_tee_q_straight').value);
                 const q_branch = parseLocalFloat(document.getElementById('sys_tee_q_branch').value);
                 const isSymTee = fittingType === 'tee_sym';
+                let newAirflow; 
 
                 if (flowType === 'splitting') {
                     const q_in = airflow;
@@ -1300,26 +1300,43 @@ function handleAddComponent(event) {
                     const d_branch = isSymTee ? d_in : parseLocalFloat(document.getElementById('sys_tee_d_branch').value);
                     const teeResults = calculateTeePressureLoss({ q_in, q_straight, q_branch }, { d_in, d_straight, d_branch }, RHO);
                     const chosenPath = document.querySelector('input[name="sysTeePath"]:checked').value;
-                    let newAirflow;
+                    
                     if (chosenPath === 'straight') {
-                        pressureLoss = teeResults.loss_straight; velocity = teeResults.details_straight.v_ms; calculationDetails = { ...teeResults.details_straight, type: fittingType, chosenPath: 'Ligeud' }; newAirflow = q_straight; name = `T-stykke (Ligeud)`; details = `q=${q_straight} m³/h`;
+                        pressureLoss = teeResults.loss_straight; 
+                        velocity = teeResults.details_straight.v_ms; 
+                        calculationDetails = { ...teeResults.details_straight, type: fittingType, chosenPath: 'Ligeud' }; 
+                        newAirflow = q_straight; 
+                        name = `T-stykke (Ligeud)`; 
+                        details = `q=${q_straight} m³/h`;
+                        newComponent.airflow = q_straight; // BUG FIX
                     } else {
-                        pressureLoss = teeResults.loss_branch; velocity = teeResults.details_branch.v_ms; calculationDetails = { ...teeResults.details_branch, type: fittingType, chosenPath: 'Afgrening' }; newAirflow = q_branch; name = `T-stykke (Afgrening)`; details = `q=${q_branch} m³/h`;
+                        pressureLoss = teeResults.loss_branch; 
+                        velocity = teeResults.details_branch.v_ms; 
+                        calculationDetails = { ...teeResults.details_branch, type: fittingType, chosenPath: 'Afgrening' }; 
+                        newAirflow = q_branch; 
+                        name = `T-stykke (Afgrening)`; 
+                        details = `q=${q_branch} m³/h`;
+                        newComponent.airflow = q_branch; // BUG FIX
                     }
                     document.getElementById('system_airflow').value = formatLocalFloat(newAirflow, 0);
                 } else { // merging
-                    const d_common = isSymTee ? parseLocalFloat(document.getElementById('sys_tee_d_in').value) : parseLocalFloat(document.getElementById('sys_tee_d_in').value);
+                    const d_common = parseLocalFloat(document.getElementById('sys_tee_d_in').value);
                     const d_straight = isSymTee ? d_common : parseLocalFloat(document.getElementById('sys_tee_d_straight').value);
                     const d_branch = isSymTee ? d_common : parseLocalFloat(document.getElementById('sys_tee_d_branch').value);
                     const teeResults = calculateConvergingTeePressureLoss({ q_straight, q_branch }, { d_common, d_straight, d_branch }, RHO);
                     const chosenPath = document.querySelector('input[name="sysTeePath"]:checked').value;
+                    newAirflow = q_straight + q_branch;
+
                     if (chosenPath === 'straight') {
                         pressureLoss = teeResults.loss_straight; velocity = teeResults.details_straight.v_ms; calculationDetails = teeResults.details_straight; name = `T-stykke Samle (fra Ligeud)`; details = `q=${q_straight} m³/h`;
                     } else {
                         pressureLoss = teeResults.loss_branch; velocity = teeResults.details_branch.v_ms; calculationDetails = teeResults.details_branch; name = `T-stykke Samle (fra Afgrening)`; details = `q=${q_branch} m³/h`;
                     }
-                    document.getElementById('system_airflow').value = formatLocalFloat(teeResults.q_out, 0);
+                    newComponent.airflow = newAirflow; // BUG FIX
+                    document.getElementById('system_airflow').value = formatLocalFloat(newAirflow, 0);
                 }
+                newComponent = { ...newComponent, type: fittingType, name, details, velocity, pressureLoss, calculationDetails };
+
             } else { // This block handles non-Tee fittings
                 newComponent.airflow = airflow; // Use the current system airflow
                 let zeta, A, v, Pdyn_Pa, loss, details, name, calculationDetails;
