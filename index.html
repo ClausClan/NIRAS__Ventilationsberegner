@@ -1399,6 +1399,46 @@ function handleAddComponent(event) {
                         calculationDetails = { type: fittingType, A_m2: A2_con, v_ms: v, zeta: zeta, Pdyn_Pa: Pdyn_Pa };
                         newComponent = { ...newComponent, name, details, velocity, pressureLoss: loss, calculationDetails };
                         break;
+
+                        case 'tee_bullhead':
+                            const flowTypeBullhead = document.querySelector('input[name="sysTeeFlowType"]:checked').value;
+                            const chosenPathBullhead = document.querySelector('input[name="sysTeePath"]:checked').value;
+                            let newAirflowBullhead;
+                        
+                            if (flowTypeBullhead === 'splitting') {
+                                const q_in = airflow;
+                                const q_out1 = parseLocalFloat(document.getElementById('sys_tee_q_out1').value);
+                                const q_out2 = parseLocalFloat(document.getElementById('sys_tee_q_out2').value);
+                                if (Math.abs(q_in - (q_out1 + q_out2)) > 1) throw new Error("Luftmængderne for T-stykket stemmer ikke overens.");
+                        
+                                const d_in = parseLocalFloat(document.getElementById('sys_tee_d_in').value);
+                                const d_out1 = parseLocalFloat(document.getElementById('sys_tee_d_out1').value);
+                                const d_out2 = parseLocalFloat(document.getElementById('sys_tee_d_out2').value);
+                                const results = calculateBullheadTeeLoss({q_in, q_out1, q_out2}, {d_in, d_out1, d_out2}, RHO);
+                                
+                                if (chosenPathBullhead === 'path1') {
+                                    pressureLoss = results.loss1; velocity = results.details1.v_ms; calculationDetails = { ...results.details1, type: fittingType, chosenPath: 'Ud 1' }; newAirflowBullhead = q_out1; name = `Dobbelt Afgr. (følger Ud 1)`; details = `q=${q_out1} m³/h`; newComponent.airflow = q_out1;
+                                } else {
+                                    pressureLoss = results.loss2; velocity = results.details2.v_ms; calculationDetails = { ...results.details2, type: fittingType, chosenPath: 'Ud 2' }; newAirflowBullhead = q_out2; name = `Dobbelt Afgr. (følger Ud 2)`; details = `q=${q_out2} m³/h`; newComponent.airflow = q_out2;
+                                }
+                            } else { // merging
+                                const q_in1 = parseLocalFloat(document.getElementById('sys_tee_q_in1').value);
+                                const q_in2 = parseLocalFloat(document.getElementById('sys_tee_q_in2').value);
+                                const d_in1 = parseLocalFloat(document.getElementById('sys_tee_d_in1').value);
+                                const d_in2 = parseLocalFloat(document.getElementById('sys_tee_d_in2').value);
+                                const d_common = parseLocalFloat(document.getElementById('sys_tee_d_common').value);
+                                const results = calculateConvergingBullheadTeeLoss({q_in1, q_in2}, {d_in1, d_in2, d_common}, RHO);
+                                newAirflowBullhead = q_in1 + q_in2;
+                        
+                                if (chosenPathBullhead === 'path1') {
+                                    pressureLoss = results.loss1; velocity = results.details1.v_ms; calculationDetails = { ...results.details1, type: 'tee_bullhead_merge', chosenPath: 'Ind 1' }; name = `Dobbelt Samling (fra Ind 1)`; details = `q=${q_in1} m³/h`; newComponent.airflow = newAirflowBullhead;
+                                } else {
+                                    pressureLoss = results.loss2; velocity = results.details2.v_ms; calculationDetails = { ...results.details2, type: 'tee_bullhead_merge', chosenPath: 'Ind 2' }; name = `Dobbelt Samling (fra Ind 2)`; details = `q=${q_in2} m³/h`; newComponent.airflow = newAirflowBullhead;
+                                }
+                            }
+                            document.getElementById('system_airflow').value = formatLocalFloat(newAirflowBullhead, 0);
+                            newComponent = { ...newComponent, type: fittingType, name, details, velocity, pressureLoss, calculationDetails };
+                            break;
                 }
             }
             newComponent = { ...newComponent, type: fittingType, name, details, velocity, pressureLoss, calculationDetails };
