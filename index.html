@@ -3,7 +3,7 @@
 <head>
         <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NIRAS Ventilationsberegner_v0.13.1_dev</title>
+    <title>NIRAS Ventilationsberegner_v0.13.2_dev</title>
     <link rel="icon" type="image/png" href="favicon.png">
     <link rel="manifest" href="manifest.json">
     <style>
@@ -104,6 +104,16 @@
             max-width: 200px; 
             margin-bottom: 0;
         }
+
+	.dimension-warning {
+	    color: var(--error-color);
+	    font-weight: bold;
+	}
+
+	.fittings-table .auto-generated td {
+	    color: var(--error-color); /* Bruger din eksisterende "fejl"-farve */
+	    font-style: italic;
+	}
         
         .input-with-button { display: flex; align-items: center; gap: 10px; }
         .input-with-button .input-field { flex-grow: 1; }
@@ -317,7 +327,7 @@
             <div id="system" class="tab-content hidden"></div>
         </div>
         <footer class="app-footer">
-            <p>AppVersion 0.13.1_dev --- Spørgsmål kontakt CWA</p>
+            <p>AppVersion 0.13.2_dev --- Spørgsmål kontakt CWA</p>
         </footer>
     </div>
     
@@ -696,42 +706,38 @@ function handleFittingCalculation(event) {
 
         if (type.startsWith('tee')) {
             const isBullhead = type === 'tee_bullhead';
-            const flowType = document.querySelector('input[name="fitTeeFlowType"]:checked').value;
-
             if (isBullhead) {
-                if (flowType === 'splitting') {
-                    const q_in = parseLocalFloat(document.getElementById('q_in').value), q_out1 = parseLocalFloat(document.getElementById('q_out1').value), q_out2 = parseLocalFloat(document.getElementById('q_out2').value);
-                    if (Math.abs(q_in - (q_out1 + q_out2)) > 1) throw new Error("Luftmængderne stemmer ikke overens (Ind ≈ Ud 1 + Ud 2).");
-                    const d_in = parseLocalFloat(document.getElementById('d_in').value), d_out1 = parseLocalFloat(document.getElementById('d_out1').value), d_out2 = parseLocalFloat(document.getElementById('d_out2').value);
-                    if (isNaN(d_in) || isNaN(d_out1) || isNaN(d_out2)) throw new Error("Ugyldige diametre.");
-                    const results = calculateBullheadTeeLoss({q_in, q_out1, q_out2}, {d_in, d_out1, d_out2}, RHO);
-                    fittingsList.push({ id: Date.now(), name: `Dobbelt Afgr. (Ud 1)`, airflow: q_out1, pressureLoss: results.loss1, details: results.details1, type: 'tee_bullhead' });
-                    fittingsList.push({ id: Date.now() + 1, name: `Dobbelt Afgr. (Ud 2)`, airflow: q_out2, pressureLoss: results.loss2, details: results.details2, type: 'tee_bullhead' });
-                } else { // merging
-                    const q_in1 = parseLocalFloat(document.getElementById('q_in1').value), q_in2 = parseLocalFloat(document.getElementById('q_in2').value);
-                    const d_in1 = parseLocalFloat(document.getElementById('d_in1').value), d_in2 = parseLocalFloat(document.getElementById('d_in2').value), d_common = parseLocalFloat(document.getElementById('d_common').value);
-                    if (isNaN(d_in1) || isNaN(d_in2) || isNaN(d_common)) throw new Error("Ugyldige diametre.");
-                    const results = calculateConvergingBullheadTeeLoss({q_in1, q_in2}, {d_in1, d_in2, d_common}, RHO);
-                    fittingsList.push({ id: Date.now(), name: `Dobbelt Samling (fra Ind 1)`, airflow: q_in1, pressureLoss: results.loss1, details: results.details1, type: 'tee_bullhead_merge' });
-                    fittingsList.push({ id: Date.now() + 1, name: `Dobbelt Samling (fra Ind 2)`, airflow: q_in2, pressureLoss: results.loss2, details: results.details2, type: 'tee_bullhead_merge' });
-                }
+                // Bullhead logic remains the same
+                const q_in = parseLocalFloat(document.getElementById('q_in').value), q_out1 = parseLocalFloat(document.getElementById('q_out1').value), q_out2 = parseLocalFloat(document.getElementById('q_out2').value);
+                if (Math.abs(q_in - (q_out1 + q_out2)) > 1) throw new Error("Luftmængderne stemmer ikke overens (Ind ≈ Ud 1 + Ud 2).");
+                const d_in = parseLocalFloat(document.getElementById('d_in').value), d_out1 = parseLocalFloat(document.getElementById('d_out1').value), d_out2 = parseLocalFloat(document.getElementById('d_out2').value);
+                if (isNaN(d_in) || isNaN(d_out1) || isNaN(d_out2)) throw new Error("Ugyldige diametre.");
+                const results = calculateBullheadTeeLoss({q_in, q_out1, q_out2}, {d_in, d_out1, d_out2}, RHO);
+                fittingsList.push({ id: Date.now(), name: `Dobbelt Afgr. (Ud 1)`, airflow: q_out1, pressureLoss: results.loss1, details: results.details1, type: 'tee' });
+                fittingsList.push({ id: Date.now() + 1, name: `Dobbelt Afgr. (Ud 2)`, airflow: q_out2, pressureLoss: results.loss2, details: results.details2, type: 'tee' });
             } else { // tee_sym or tee_asym
+                const flowType = document.querySelector('input[name="fitTeeFlowType"]:checked').value;
                 const isSym = type === 'tee_sym';
+                
                 if (flowType === 'splitting') {
                     const q_in = parseLocalFloat(document.getElementById('q_in').value), q_straight = parseLocalFloat(document.getElementById('q_straight').value), q_branch = parseLocalFloat(document.getElementById('q_branch').value);
                     if (Math.abs(q_in - (q_straight + q_branch)) > 1) throw new Error("Luftmængderne stemmer ikke overens (Ind ≈ Ligeud + Afgrening).");
+                    
                     const d_in = parseLocalFloat(document.getElementById('d_in').value);
                     const d_straight = isSym ? d_in : parseLocalFloat(document.getElementById('d_straight').value);
                     const d_branch = isSym ? d_in : parseLocalFloat(document.getElementById('d_branch').value);
+                    
                     const results = calculateTeePressureLoss({q_in, q_straight, q_branch}, {d_in, d_straight, d_branch}, RHO);
                     const name_base = isSym ? `T-stykke Sym. Ø${d_in}` : `T-stykke Asym.`;
                     fittingsList.push({ id: Date.now(), name: `${name_base} (Ligeud)`, airflow: q_straight, pressureLoss: results.loss_straight, details: results.details_straight, type: 'tee' });
                     fittingsList.push({ id: Date.now() + 1, name: `${name_base} (Afgrening)`, airflow: q_branch, pressureLoss: results.loss_branch, details: results.details_branch, type: 'tee' });
                 } else { // merging
                     const q_straight = parseLocalFloat(document.getElementById('q_straight').value), q_branch = parseLocalFloat(document.getElementById('q_branch').value);
+                    
                     const d_common = parseLocalFloat(document.getElementById('d_in').value);
                     const d_straight = isSym ? d_common : parseLocalFloat(document.getElementById('d_straight').value);
                     const d_branch = isSym ? d_common : parseLocalFloat(document.getElementById('d_branch').value);
+                    
                     const results = calculateConvergingTeePressureLoss({q_straight, q_branch}, {d_common, d_straight, d_branch}, RHO);
                     const name_base = isSym ? `T-stykke Udsugning Sym. Ø${d_common}` : `T-stykke Udsugning Asym.`;
                     fittingsList.push({ id: Date.now(), name: `${name_base} (fra Ligeud)`, airflow: q_straight, pressureLoss: results.loss_straight, details: results.details_straight, type: 'tee' });
@@ -744,52 +750,47 @@ function handleFittingCalculation(event) {
             const Q = q_m3h / 3600;
             let name, zeta, A, v, d_hyd, Pdyn_Pa, loss, details = {};
 
-            switch(type) {
-                case 'bend_circ':
-                    const d = parseLocalFloat(document.getElementById('d').value), angle = parseLocalFloat(document.getElementById('angle').value), rd = parseLocalFloat(document.getElementById('rd').value);
-                    const rd_key = rd < 1.25 ? "rd1_0" : "rd1_5";
-                    const zeta_table = CIRCULAR_BEND_ZETA[rd_key];
-                    zeta = interpolateValue(angle, d, zeta_table);
-                    d_hyd = getInternalDim(d)/1000;
-                    A = Math.PI * (d_hyd/2)**2;
-                    v = Q/A;
-                    name = `Bøjning Cirk. Ø${d}`;
-                    break;
-                case 'bend_rect':
-                    const h = parseLocalFloat(document.getElementById('h').value), w = parseLocalFloat(document.getElementById('w').value), angle_r = parseLocalFloat(document.getElementById('angle').value), rh = parseLocalFloat(document.getElementById('rh').value);
-                    const hw_ratio = h/w;
-                    const zeta_base = interpolateValue(hw_ratio, rh, RECTANGULAR_BEND_ZETA.mainTable);
-                    const k_factor = interpolateValue(angle_r, null, RECTANGULAR_BEND_ZETA.kFactor);
-                    zeta = zeta_base * k_factor;
-                    let h_int = getInternalDim(h)/1000, w_int = getInternalDim(w)/1000;
-                    d_hyd = (2 * h_int * w_int) / (h_int + w_int);
-                    A = Math.PI * (d_hyd/2)**2;
-                    v = Q/A;
-                    name = `Bøjning Rekt. ${h}x${w}`;
-                    break;
-                case 'expansion':
-                    const d1_exp = parseLocalFloat(document.getElementById('d1').value), d2_exp = parseLocalFloat(document.getElementById('d2').value), angle_exp = parseLocalFloat(document.getElementById('angle').value);
-                    const A1 = Math.PI * (getInternalDim(d1_exp)/2000)**2, A2 = Math.PI * (getInternalDim(d2_exp)/2000)**2;
-                    const area_ratio_exp = A2/A1;
-                    zeta = interpolateValue(angle_exp, area_ratio_exp, EXPANSION_ZETA);
-                    v = Q/A1;
-                    A = A1;
-                    name = `Udvidelse Ø${d1_exp}-Ø${d2_exp}`;
-                    break;
-                 case 'contraction':
-                    const d1_con = parseLocalFloat(document.getElementById('d1').value), d2_con = parseLocalFloat(document.getElementById('d2').value), angle_con = parseLocalFloat(document.getElementById('angle').value);
-                    const A1_con = Math.PI * (getInternalDim(d1_con)/2000)**2, A2_con = Math.PI * (getInternalDim(d2_con)/2000)**2;
-                    const area_ratio_con = A2_con/A1_con;
-                    zeta = interpolateValue(angle_con, area_ratio_con, CONTRACTION_ZETA);
-                    v = Q/A2_con;
-                    A = A2_con;
-                    name = `Indsnævring Ø${d1_con}-Ø${d2_con}`;
-                    break;
-
-                    // --- TILFØJ DENNE DEFAULT CASE ---
-                    default:
-                    // Hvis 'type' er tom eller ukendt, stop eksekveringen her.
-                    throw new Error("Vælg venligst en gyldig type formstykke.");
+                    switch(type) {
+                        case 'bend_circ':
+                            const d = parseLocalFloat(document.getElementById('d').value), angle = parseLocalFloat(document.getElementById('angle').value), rd = parseLocalFloat(document.getElementById('rd').value);
+                            const rd_key = rd < 1.25 ? "rd1_0" : "rd1_5";
+                            const zeta_table = CIRCULAR_BEND_ZETA[rd_key];
+                            zeta = interpolateValue(angle, d, zeta_table);
+                            d_hyd = getInternalDim(d)/1000;
+                            A = Math.PI * (d_hyd/2)**2;
+                            v = Q/A;
+                            name = `Bøjning Cirk. Ø${d}`;
+                            break;
+                        case 'bend_rect':
+                            const h = parseLocalFloat(document.getElementById('h').value), w = parseLocalFloat(document.getElementById('w').value), angle_r = parseLocalFloat(document.getElementById('angle').value), rh = parseLocalFloat(document.getElementById('rh').value);
+                            const hw_ratio = h/w;
+                            const zeta_base = interpolateValue(hw_ratio, rh, RECTANGULAR_BEND_ZETA.mainTable);
+                            const k_factor = interpolateValue(angle_r, null, RECTANGULAR_BEND_ZETA.kFactor);
+                            zeta = zeta_base * k_factor;
+                            let h_int = getInternalDim(h)/1000, w_int = getInternalDim(w)/1000;
+                            d_hyd = (2 * h_int * w_int) / (h_int + w_int);
+                            A = Math.PI * (d_hyd/2)**2; // Ækvivalent areal
+                            v = Q/A;
+                            name = `Bøjning Rekt. ${h}x${w}`;
+                            break;
+                        case 'expansion':
+                            const d1_exp = parseLocalFloat(document.getElementById('d1').value), d2_exp = parseLocalFloat(document.getElementById('d2').value), angle_exp = parseLocalFloat(document.getElementById('angle').value);
+                            const A1 = Math.PI * (getInternalDim(d1_exp)/2000)**2, A2 = Math.PI * (getInternalDim(d2_exp)/2000)**2;
+                            const area_ratio_exp = A2/A1;
+                            zeta = interpolateValue(angle_exp, area_ratio_exp, EXPANSION_ZETA);
+                            v = Q/A1; // Use inlet velocity for expansion
+                            A = A1;
+                            name = `Udvidelse Ø${d1_exp}-Ø${d2_exp}`;
+                            break;
+                         case 'contraction':
+                            const d1_con = parseLocalFloat(document.getElementById('d1').value), d2_con = parseLocalFloat(document.getElementById('d2').value), angle_con = parseLocalFloat(document.getElementById('angle').value);
+                            const A1_con = Math.PI * (getInternalDim(d1_con)/2000)**2, A2_con = Math.PI * (getInternalDim(d2_con)/2000)**2;
+                            const area_ratio_con = A2_con/A1_con;
+                            zeta = interpolateValue(angle_con, area_ratio_con, CONTRACTION_ZETA);
+                            v = Q/A2_con; // Use outlet velocity for contraction
+                            A = A2_con;
+                            name = `Indsnævring Ø${d1_con}-Ø${d2_con}`;
+                            break;
             }
             
             Pdyn_Pa = (RHO / 2) * v ** 2;
@@ -801,6 +802,7 @@ function handleFittingCalculation(event) {
     } catch (error) {
         renderError(error.message, fittingsResultsContainer);
     }
+}
             
         function calculateFrictionFactor(hydraulicDiameter, velocity, NU) {
             const Re = (velocity * hydraulicDiameter) / NU;
@@ -1047,10 +1049,9 @@ function handleFittingCalculation(event) {
 
 function handleComponentTypeChange() {
     const type = systemComponentTypeSelect.value;
-    systemComponentInputsContainer.innerHTML = ''; // Clear previous inputs
+    systemComponentInputsContainer.innerHTML = ''; // Rydder gamle inputs
 
     if (type === 'straightDuct') {
-        // Build dropdowns from the standard size arrays
         const roundOptions = STANDARD_ROUND_SIZES_MM.map(s => `<option value="${s}">${s} mm</option>`).join('');
         const rectOptions = STANDARD_RECT_SIZES_MM.map(s => `<option value="${s}">${s} mm</option>`).join('');
 
@@ -1102,6 +1103,8 @@ function handleComponentTypeChange() {
                     <optgroup label="T-stykker (Cirkulær)">
                         <option value="tee_sym">T-stykke, Symmetrisk</option>
                         <option value="tee_asym">T-stykke, Asymmetrisk</option>
+                        // NYT: Tilføjet direkte her
+                        <option value="tee_bullhead">T-stykke (Dobbelt Afgrening)</option> 
                     </optgroup>
                 </select>
             </div>
@@ -1124,15 +1127,15 @@ function handleComponentTypeChange() {
 function renderSystemFittingInputs() {
     const fittingType = document.getElementById('systemFittingType').value;
     const container = document.getElementById('systemFittingInputsContainer');
-    container.innerHTML = ''; // Clear old inputs
+    container.innerHTML = ''; // Rydder gamle inputs
 
     if (!fittingType) return;
-    
-    // Build dropdowns from the standard size arrays
+
     const roundOptions = STANDARD_ROUND_SIZES_MM.map(s => `<option value="${s}">${s} mm</option>`).join('');
     const rectOptions = STANDARD_RECT_SIZES_MM.map(s => `<option value="${s}">${s} mm</option>`).join('');
 
     let inputsHtml = '';
+    
     switch (fittingType) {
         case 'bend_circ':
             inputsHtml = `
@@ -1160,280 +1163,345 @@ function renderSystemFittingInputs() {
                     <div class="input-group"><label for="sys_angle_dim">Vinkel (α)</label><input type="text" id="sys_angle_dim" class="input-field" value="30"></div>
                 </div>`;
             break;
-case 'tee_sym':
+        case 'tee_sym':
         case 'tee_asym':
             inputsHtml = `
                 <div class="input-group">
                     <label>Flow Type</label> 
                     <div class="radio-group"> 
-                        <input type="radio" id="sysTeeFlowSplit" name="sysTeeFlowType" value="splitting" checked><label for="sysTeeFlowSplit">Indblæsning (Dele-flow)</label> 
-                        <input type="radio" id="sysTeeFlowMerge" name="sysTeeFlowType" value="merging"><label for="sysTeeFlowMerge">Udsugning (Samle-flow)</label> 
+                        <input type="radio" id="sysTeeFlowSplit" name="sysTeeFlowType" value="splitting" checked><label for="sysTeeFlowSplit">Indblæsning</label> 
+                        <input type="radio" id="sysTeeFlowMerge" name="sysTeeFlowType" value="merging"><label for="sysTeeFlowMerge">Udsugning</label> 
                     </div>
                 </div>
-                <div id="teeSpecificInputs"></div>
-            `;
+                <div id="teeSpecificInputs"></div>`;
             
-            // Function to render the correct inputs based on flow type
-            const renderTeeInputs = () => {
-                const flowType = document.querySelector('input[name="sysTeeFlowType"]:checked').value;
-                const teeContainer = document.getElementById('teeSpecificInputs');
-                const isSym = fittingType === 'tee_sym';
-
-                const diameterInputs = isSym ?
-                    `<div class="input-group"><label>Diameter (alle grene)</label><select id="sys_tee_d_in" class="input-field">${roundOptions}</select></div>` :
-                    `<div class="input-field-group">
-                        <div class="input-group"><label for="sys_tee_d_in">Ø Ind/Ud</label><select id="sys_tee_d_in" class="input-field">${roundOptions}</select></div>
-                        <div class="input-group"><label for="sys_tee_d_straight">Ø Ligeud</label><select id="sys_tee_d_straight" class="input-field">${roundOptions}</select></div>
-                        <div class="input-group"><label for="sys_tee_d_branch">Ø Afgrening</label><select id="sys_tee_d_branch" class="input-field">${roundOptions}</select></div>
-                    </div>`;
-
-                if (flowType === 'splitting') {
-                    teeContainer.innerHTML = `
-                        <div class="sub-group">
-                            <label>Luftmængder (q Ind arves fra system)</label>
-                            <div class="input-field-group">
-                                <div class="input-group"><label for="sys_tee_q_straight">q Ligeud</label><div class="input-unit-wrapper" data-unit="m³/h"><input type="text" id="sys_tee_q_straight" class="input-field"></div></div>
-                                <div class="input-group"><label for="sys_tee_q_branch">q Afgrening</label><div class="input-unit-wrapper" data-unit="m³/h"><input type="text" id="sys_tee_q_branch" class="input-field"></div></div>
-                            </div>
-                        </div>
-                        <div class="sub-group">${diameterInputs}</div>
-                        <div class="sub-group">
-                            <label>Hvilken gren fortsætter systemet med?</label>
-                            <div class="radio-group"> 
-                                <input type="radio" id="sysTeePathStraight" name="sysTeePath" value="straight" checked><label for="sysTeePathStraight">Ligeud</label> 
-                                <input type="radio" id="sysTeePathBranch" name="sysTeePath" value="branch"><label for="sysTeePathBranch">Afgrening</label> 
-                            </div>
-                        </div>
-                    `;
-                } else { // merging
-                    teeContainer.innerHTML = `
-                         <div class="sub-group">
-                            <label>Luftmængder (q Ud bliver ny system-luftmængde)</label>
-                            <div class="input-field-group">
-                                <div class="input-group"><label for="sys_tee_q_straight">q Ligeud (Ind)</label><div class="input-unit-wrapper" data-unit="m³/h"><input type="text" id="sys_tee_q_straight" class="input-field"></div></div>
-                                <div class="input-group"><label for="sys_tee_q_branch">q Afgrening (Ind)</label><div class="input-unit-wrapper" data-unit="m³/h"><input type="text" id="sys_tee_q_branch" class="input-field"></div></div>
-                            </div>
-                        </div>
-                        <div class="sub-group">${diameterInputs}</div>
-                         <div class="sub-group">
-                            <label>Hvilket indløbs tryktab skal medregnes?</label>
-                            <div class="radio-group"> 
-                                <input type="radio" id="sysTeePathStraight" name="sysTeePath" value="straight" checked><label for="sysTeePathStraight">Ligeud</label> 
-                                <input type="radio" id="sysTeePathBranch" name="sysTeePath" value="branch"><label for="sysTeePathBranch">Afgrening</label> 
-                            </div>
-                        </div>
-                    `;
-                }
-            };
-            
-            // This needs to be deferred slightly to ensure the #teeSpecificInputs container is in the DOM
             setTimeout(() => {
-                document.getElementsByName('sysTeeFlowType').forEach(r => r.addEventListener('change', renderTeeInputs));
-                renderTeeInputs();
+                const teeFlowTypeRadios = document.getElementsByName('sysTeeFlowType');
+                if(teeFlowTypeRadios.length > 0){
+                    const renderTeeInputs = () => {
+                        const flowType = document.querySelector('input[name="sysTeeFlowType"]:checked').value;
+                        const teeContainer = document.getElementById('teeSpecificInputs');
+                        const isSym = fittingType === 'tee_sym';
+
+                        const diameterInputs = isSym ?
+                            `<div class="input-group"><label>Diameter (alle grene)</label><select id="sys_tee_d_in" class="input-field">${roundOptions}</select></div>` :
+                            `<div class="input-field-group">
+                                <div class="input-group"><label for="sys_tee_d_in">Ø Ind/Ud</label><select id="sys_tee_d_in" class="input-field">${roundOptions}</select></div>
+                                <div class="input-group"><label for="sys_tee_d_straight">Ø Ligeud</label><select id="sys_tee_d_straight" class="input-field">${roundOptions}</select></div>
+                                <div class="input-group"><label for="sys_tee_d_branch">Ø Afgrening</label><select id="sys_tee_d_branch" class="input-field">${roundOptions}</select></div>
+                            </div>`;
+
+                        if (flowType === 'splitting') {
+                            teeContainer.innerHTML = `
+                                <div class="sub-group">
+                                    <label>Luftmængder (q Ind arves fra system)</label>
+                                    <div class="input-field-group">
+                                        <div class="input-group"><label for="sys_tee_q_straight">q Ligeud</label><div class="input-unit-wrapper" data-unit="m³/h"><input type="text" id="sys_tee_q_straight" class="input-field"></div></div>
+                                        <div class="input-group"><label for="sys_tee_q_branch">q Afgrening</label><div class="input-unit-wrapper" data-unit="m³/h"><input type="text" id="sys_tee_q_branch" class="input-field"></div></div>
+                                    </div>
+                                </div>
+                                <div class="sub-group">${diameterInputs}</div>
+                                <div class="sub-group">
+                                    <label>Hvilken gren fortsætter systemet med?</label>
+                                    <div class="radio-group"> 
+                                        <input type="radio" id="sysTeePathStraight" name="sysTeePath" value="straight" checked><label for="sysTeePathStraight">Ligeud</label> 
+                                        <input type="radio" id="sysTeePathBranch" name="sysTeePath" value="branch"><label for="sysTeePathBranch">Afgrening</label> 
+                                    </div>
+                                </div>
+                            `;
+                        } else { // merging
+                            teeContainer.innerHTML = `
+                                 <div class="sub-group">
+                                    <label>Luftmængder (q Ud bliver ny system-luftmængde)</label>
+                                    <div class="input-field-group">
+                                        <div class="input-group"><label for="sys_tee_q_straight">q Ligeud (Ind)</label><div class="input-unit-wrapper" data-unit="m³/h"><input type="text" id="sys_tee_q_straight" class="input-field"></div></div>
+                                        <div class="input-group"><label for="sys_tee_q_branch">q Afgrening (Ind)</label><div class="input-unit-wrapper" data-unit="m³/h"><input type="text" id="sys_tee_q_branch" class="input-field"></div></div>
+                                    </div>
+                                </div>
+                                <div class="sub-group">${diameterInputs}</div>
+                                 <div class="sub-group">
+                                    <label>Hvilket indløbs tryktab skal medregnes?</label>
+                                    <div class="radio-group"> 
+                                        <input type="radio" id="sysTeePathStraight" name="sysTeePath" value="straight" checked><label for="sysTeePathStraight">Ligeud</label> 
+                                        <input type="radio" id="sysTeePathBranch" name="sysTeePath" value="branch"><label for="sysTeePathBranch">Afgrening</label> 
+                                    </div>
+                                </div>
+                            `;
+                        }
+                    };
+                    teeFlowTypeRadios.forEach(r => r.addEventListener('change', renderTeeInputs));
+                    renderTeeInputs();
+                }
             }, 0);
+            break;
+        // NYT: Tilføjet Dobbelt T-stykke
+        case 'tee_bullhead':
+            inputsHtml = `
+                <div class="sub-group">
+                    <label>Luftmængder (q Ind arves fra system)</label>
+                    <div class="input-field-group">
+                        <div class="input-group"><label for="sys_tee_q_out1">q Ud 1</label><div class="input-unit-wrapper" data-unit="m³/h"><input type="text" id="sys_tee_q_out1" class="input-field"></div></div>
+                        <div class="input-group"><label for="sys_tee_q_out2">q Ud 2</label><div class="input-unit-wrapper" data-unit="m³/h"><input type="text" id="sys_tee_q_out2" class="input-field"></div></div>
+                    </div>
+                </div>
+                <div class="sub-group">
+                    <label>Diametre</label>
+                     <div class="input-field-group">
+                        <div class="input-group"><label for="sys_tee_d_in">Ø Ind</label><select id="sys_tee_d_in" class="input-field">${roundOptions}</select></div>
+                        <div class="input-group"><label for="sys_tee_d_out1">Ø Ud 1</label><select id="sys_tee_d_out1" class="input-field">${roundOptions}</select></div>
+                        <div class="input-group"><label for="sys_tee_d_out2">Ø Ud 2</label><select id="sys_tee_d_out2" class="input-field">${roundOptions}</select></div>
+                    </div>
+                </div>
+                <div class="sub-group">
+                    <label>Hvilken gren fortsætter systemet med?</label>
+                    <div class="radio-group"> 
+                        <input type="radio" id="sysTeePath1" name="sysTeePath" value="path1" checked><label for="sysTeePath1">Gren 1</label> 
+                        <input type="radio" id="sysTeePath2" name="sysTeePath" value="path2"><label for="sysTeePath2">Gren 2</label> 
+                    </div>
+                </div>`;
             break;
     }
     
-    // Add the submit button only if inputs were generated
     if (inputsHtml) {
         container.innerHTML = inputsHtml + `<button type="submit" class="button primary">Tilføj til System</button>`;
-    } else {
-        container.innerHTML = inputsHtml;
     }
 }
         
-/**
- * Håndterer tilføjelsen af en ny komponent til systemberegningen.
- * Den læser input fra brugerfladen, beregner tryktab og opdaterer systemets tilstand.
- * @param {Event} event - Formens 'submit'-event.
- */
 function handleAddComponent(event) {
-    event.preventDefault(); // Forhindrer siden i at genindlæse
+    event.preventDefault();
 
-    // --- 1. Indsaml og valider basis-input ---
-    const componentType = document.getElementById('systemComponentType').value;
-    if (!componentType) {
-        alert('Vælg venligst en komponenttype.');
+    // --- 1. HENT AKTUELLE SYSTEMDATA ---
+    const startAirflow = parseLocalFloat(document.getElementById('system_airflow').value);
+    if (isNaN(startAirflow) || startAirflow <= 0) {
+        alert('Udfyld venligst en gyldig Start Luftmængde.');
         return;
     }
+    const lastComponent = systemComponents.length > 0 ? systemComponents[systemComponents.length - 1] : null;
+    const airflow = lastComponent ? lastComponent.newAirflowAfter : startAirflow;
 
-    // Rettelse: Hent fittingType her, hvis det er et formstykke
-    const fittingType = (componentType === 'fitting') 
-        ? document.getElementById('systemFittingType').value 
-        : null;
-
-    if (componentType === 'fitting' && !fittingType) {
-        alert('Vælg venligst en specifik type formstykke.');
-        return;
-    }
-
-    const airflow = parseLocalFloat(document.getElementById('system_airflow').value);
     const temp = parseLocalFloat(document.getElementById('temperature').value);
-
-    if (isNaN(airflow) || isNaN(temp) || airflow <= 0) {
-        alert('Udfyld venligst Start Luftmængde og global Temperatur korrekt.');
-        return;
-    }
+    if (isNaN(temp)) { alert('Udfyld venligst en gyldig global Temperatur.'); return; }
 
     const { RHO, NU } = getAirProperties(temp);
     const Q = airflow / 3600;
 
-    const newComponent = {
-        id: Date.now(),
-        airflow: airflow,
-        type: fittingType || componentType // Brug fittingType hvis den findes
-    };
-
-    // --- 2. Beregn tryktab baseret på komponenttype ---
+    const componentType = systemComponentTypeSelect.value;
+    
     try {
+        // --- HJÆLPEFUNKTION TIL AUTOMATISKE OVERGANGE ---
+        const addTransitionIfNeeded = (newComponentInletDimension) => {
+            if (!lastComponent || !lastComponent.outletDimension || !newComponentInletDimension) return;
+
+            const lastOutlet = lastComponent.outletDimension;
+            const newInlet = newComponentInletDimension;
+            
+            let needsTransition = false;
+            // Tjekker kun for cirkulær-til-cirkulær i denne version
+            if (lastOutlet.shape === 'round' && newInlet.shape === 'round' && lastOutlet.d !== newInlet.d) {
+                needsTransition = true;
+            }
+            
+            if (needsTransition) {
+                const isExpansion = newInlet.d > lastOutlet.d;
+                const type = isExpansion ? 'expansion' : 'contraction';
+                const name = isExpansion ? 'OBS: Udvidelse (auto)' : 'OBS: Indsnævring (auto)';
+                const d1 = lastOutlet.d;
+                const d2 = newInlet.d;
+                
+                const A1 = Math.PI * (getInternalDim(d1)/2000)**2;
+                const A2 = Math.PI * (getInternalDim(d2)/2000)**2;
+                const zeta_table = isExpansion ? EXPANSION_ZETA : CONTRACTION_ZETA;
+                const area_ratio = A2/A1;
+                const zeta = interpolateValue(30, area_ratio, zeta_table); // Antager 30 grader for auto-overgang
+                
+                const v = isExpansion ? Q/A1 : Q/A2;
+                const Pdyn_Pa = (RHO / 2) * v**2;
+                const pressureLoss = zeta * Pdyn_Pa;
+
+                const transitionComponent = {
+                    id: Date.now() - 1, airflow: airflow, type: type, name: name,
+                    details: `fra Ø${d1} til Ø${d2}`, velocity: v, pressureLoss: pressureLoss,
+                    calculationDetails: { Q_m3s: Q, A_m2: isExpansion ? A1 : A2, v_ms: v, zeta: zeta, Pdyn_Pa: Pdyn_Pa, type: type },
+                    isAutoGenerated: true,
+                    outletDimension: { shape: 'round', d: d2 },
+                    newAirflowAfter: airflow
+                };
+                systemComponents.push(transitionComponent);
+            }
+        };
+
+        // --- 2. OPRET BRUGER-VALGT KOMPONENT ---
+        let newComponent = { id: Date.now(), airflow: airflow };
+        let inletDimension;
+
         if (componentType === 'straightDuct') {
             const length = parseLocalFloat(document.getElementById('ductLength').value);
-            if (isNaN(length) || length <= 0) throw new Error('Ugyldig længde for lige kanal.');
-
             const shape = document.querySelector('input[name="sysDuctShape"]:checked').value;
-            let performance;
+            let performance, name, details, calcDetails, outletDimension;
 
             if (shape === 'round') {
                 const diameter = parseLocalFloat(document.getElementById('ductDiameter').value);
-                performance = getPerformance(Q, diameter / 1000, { shape: 'round' }, RHO, NU);
-                newComponent.name = `Lige Kanal Ø${diameter}`;
-                newComponent.details = `${formatLocalFloat(length, 1)}m`;
+                inletDimension = { shape: 'round', d: diameter };
+                
+                performance = getPerformance(Q, diameter / 1000, { shape: 'round', a: diameter }, RHO, NU);
+                name = `Lige Kanal Ø${diameter}`; details = `${length}m`;
+                outletDimension = { shape: 'round', d: diameter };
+                calcDetails = { ...performance, shape: 'round', a: diameter, length: length, type: 'straightDuct' };
             } else {
                 const sideA = parseLocalFloat(document.getElementById('ductSideA').value);
                 const sideB = parseLocalFloat(document.getElementById('ductSideB').value);
+                inletDimension = { shape: 'rect', h: sideA, w: sideB };
+                
                 performance = getPerformance(Q, 0, { shape: 'rect', a: sideA, b: sideB }, RHO, NU);
-                newComponent.name = `Lige Kanal ${sideA}x${sideB}`;
-                newComponent.details = `${formatLocalFloat(length, 1)}m`;
+                name = `Lige Kanal ${sideA}x${sideB}`; details = `${length}m`;
+                outletDimension = { shape: 'rect', h: sideA, w: sideB };
+                calcDetails = { ...performance, shape: 'rect', a: sideA, b: sideB, length: length, type: 'straightDuct' };
             }
-
-            newComponent.velocity = performance.velocity;
-            newComponent.pressureLoss = performance.pressureDrop * length;
-            newComponent.calculationDetails = { ...performance, length: length };
+            addTransitionIfNeeded(inletDimension);
+            newComponent = { ...newComponent, type: 'straightDuct', name, details, velocity: performance.velocity, pressureLoss: performance.pressureDrop * length, calculationDetails: calcDetails, newAirflowAfter: airflow, outletDimension: outletDimension };
 
         } else if (componentType === 'manualLoss') {
-            newComponent.name = document.getElementById('manualLossName').value || 'Manuelt Tab';
-            newComponent.pressureLoss = parseLocalFloat(document.getElementById('manualLossValue').value);
-            if (isNaN(newComponent.pressureLoss)) throw new Error('Ugyldigt manuelt tryktab.');
-            newComponent.details = '';
-            newComponent.velocity = null;
-            newComponent.calculationDetails = null;
+            const name = document.getElementById('manualLossName').value || 'Manuelt Tab';
+            const pressureLoss = parseLocalFloat(document.getElementById('manualLossValue').value);
+            const outletDimension = lastComponent ? lastComponent.outletDimension : null;
+            newComponent = { ...newComponent, type: 'manualLoss', name, details: '', velocity: null, pressureLoss: pressureLoss, calculationDetails: null, newAirflowAfter: airflow, outletDimension: outletDimension };
+        
+        } else if (componentType === 'fitting') {
+            const fittingType = document.getElementById('systemFittingType').value;
+            if (!fittingType) { alert('Vælg venligst en type formstykke.'); return; }
 
-        } else if (fittingType && fittingType.startsWith('tee_')) { // Logik KUN for T-stykker
-            const flowType = document.querySelector('input[name="sysTeeFlowType"]:checked').value;
-            const q_straight = parseLocalFloat(document.getElementById('sys_tee_q_straight').value);
-            const q_branch = parseLocalFloat(document.getElementById('sys_tee_q_branch').value);
-            const isSymTee = fittingType === 'tee_sym';
+            let name, details, velocity, pressureLoss, calculationDetails, outletDimension;
+            let newAirflowAfter = airflow; 
+            let zeta, A, v, Pdyn_Pa;
 
-            const d_in_common = parseLocalFloat(document.getElementById('sys_tee_d_in').value);
-            const d_straight = isSymTee ? d_in_common : parseLocalFloat(document.getElementById('sys_tee_d_straight').value);
-            const d_branch = isSymTee ? d_in_common : parseLocalFloat(document.getElementById('sys_tee_d_branch').value);
-
-            if (flowType === 'splitting') {
-                if (Math.abs(airflow - (q_straight + q_branch)) > 0.1) {
-                    throw new Error("Luftmængder for T-stykke (dele-flow) stemmer ikke overens.");
-                }
-                const teeResults = calculateTeePressureLoss({ q_in: airflow, q_straight, q_branch }, { d_in: d_in_common, d_straight, d_branch }, RHO);
-                const chosenPath = document.querySelector('input[name="sysTeePath"]:checked').value;
-                
-                let newAirflow;
-                if (chosenPath === 'straight') {
-                    Object.assign(newComponent, { name: `T-stykke (Ligeud)`, details: `q=${formatLocalFloat(q_straight,0)} m³/h`, velocity: teeResults.details_straight.v_ms, pressureLoss: teeResults.loss_straight, calculationDetails: { ...teeResults.details_straight, type: fittingType, chosenPath: 'Ligeud' } });
-                    newAirflow = q_straight;
-                } else {
-                    Object.assign(newComponent, { name: `T-stykke (Afgrening)`, details: `q=${formatLocalFloat(q_branch,0)} m³/h`, velocity: teeResults.details_branch.v_ms, pressureLoss: teeResults.loss_branch, calculationDetails: { ...teeResults.details_branch, type: fittingType, chosenPath: 'Afgrening' } });
-                    newAirflow = q_branch;
-                }
-                document.getElementById('system_airflow').value = formatLocalFloat(newAirflow, 0);
-
-            } else { // Merging flow
-                const teeResults = calculateConvergingTeePressureLoss({ q_straight, q_branch }, { d_common: d_in_common, d_straight, d_branch }, RHO);
-                const chosenPath = document.querySelector('input[name="sysTeePath"]:checked').value;
-
-                if (chosenPath === 'straight') {
-                    Object.assign(newComponent, { name: `T-stykke Samle (fra Ligeud)`, details: `q=${formatLocalFloat(q_straight,0)} m³/h`, velocity: teeResults.details_straight.v_ms, pressureLoss: teeResults.loss_straight, calculationDetails: { ...teeResults.details_straight, type: fittingType, chosenPath: 'Ligeud' } });
-                } else {
-                    Object.assign(newComponent, { name: `T-stykke Samle (fra Afgr.)`, details: `q=${formatLocalFloat(q_branch,0)} m³/h`, velocity: teeResults.details_branch.v_ms, pressureLoss: teeResults.loss_branch, calculationDetails: { ...teeResults.details_branch, type: fittingType, chosenPath: 'Afgrening' } });
-                }
-                document.getElementById('system_airflow').value = formatLocalFloat(teeResults.q_out, 0);
-            }
-
-        } else if (componentType === 'fitting') { // Alle andre formstykker
-            let zeta, A, v, Pdyn_Pa, loss;
-
-            switch (fittingType) {
+            switch(fittingType) {
                 case 'bend_circ': {
                     const d = parseLocalFloat(document.getElementById('sys_d').value);
+                    inletDimension = { shape: 'round', d: d };
+                    outletDimension = { shape: 'round', d: d };
                     const angle = parseLocalFloat(document.getElementById('sys_angle').value);
                     const rd = parseLocalFloat(document.getElementById('sys_rd').value);
-                    zeta = interpolateValue(angle, d, CIRCULAR_BEND_ZETA[rd < 1.25 ? "rd1_0" : "rd1_5"]);
-                    A = Math.PI * (getInternalDim(d) / 2000) ** 2;
-                    newComponent.name = `Bøjning Cirk. Ø${d}`;
-                    newComponent.details = `${angle}° R/d=${rd}`;
+                    const rd_key = rd < 1.25 ? "rd1_0" : "rd1_5";
+                    zeta = interpolateValue(angle, d, CIRCULAR_BEND_ZETA[rd_key]);
+                    A = Math.PI * (getInternalDim(d)/2000)**2;
+                    v = Q/A;
+                    name = `Bøjning Cirk. Ø${d}`; details = `${angle}° R/d=${rd}`;
                     break;
                 }
                 case 'bend_rect': {
                     const h = parseLocalFloat(document.getElementById('sys_h').value);
                     const w = parseLocalFloat(document.getElementById('sys_w').value);
+                    inletDimension = { shape: 'rect', h: h, w: w };
+                    outletDimension = { shape: 'rect', h: h, w: w };
                     const angle_r = parseLocalFloat(document.getElementById('sys_angle_r').value);
                     const rh = parseLocalFloat(document.getElementById('sys_rh').value);
-                    const zeta_base = interpolateValue(h / w, rh, RECTANGULAR_BEND_ZETA.mainTable);
+                    const hw_ratio = h/w;
+                    const zeta_base = interpolateValue(hw_ratio, rh, RECTANGULAR_BEND_ZETA.mainTable);
                     const k_factor = interpolateValue(angle_r, null, RECTANGULAR_BEND_ZETA.kFactor);
                     zeta = zeta_base * k_factor;
-                    const d_hyd = (2 * getInternalDim(h) * getInternalDim(w)) / (getInternalDim(h) + getInternalDim(w));
-                    A = Math.PI * (d_hyd / 2000) ** 2; // Ækvivalent areal
-                    newComponent.name = `Bøjning Rekt. ${h}x${w}`;
-                    newComponent.details = `${angle_r}° R/H=${rh}`;
+                    let h_int = getInternalDim(h)/1000, w_int = getInternalDim(w)/1000;
+                    const d_hyd = (2 * h_int * w_int) / (h_int + w_int);
+                    A = Math.PI * (d_hyd/2)**2;
+                    v = Q/A;
+                    name = `Bøjning Rekt. ${h}x${w}`; details = `${angle_r}° R/H=${rh}`;
                     break;
                 }
                 case 'expansion': {
                     const d1 = parseLocalFloat(document.getElementById('sys_d1').value);
                     const d2 = parseLocalFloat(document.getElementById('sys_d2').value);
-                    const angle = parseLocalFloat(document.getElementById('sys_angle_dim').value);
-                    const A1 = Math.PI * (getInternalDim(d1) / 2000) ** 2;
-                    const A2 = Math.PI * (getInternalDim(d2) / 2000) ** 2;
-                    zeta = interpolateValue(angle, A2 / A1, EXPANSION_ZETA);
-                    A = A1; // Tryktab baseres på indløbshastighed
-                    newComponent.name = `Udvidelse Ø${d1}-Ø${d2}`;
-                    newComponent.details = `${angle}°`;
+                    inletDimension = { shape: 'round', d: d1 };
+                    outletDimension = { shape: 'round', d: d2 };
+                    const angle_exp = parseLocalFloat(document.getElementById('sys_angle_dim').value);
+                    const A1 = Math.PI * (getInternalDim(d1)/2000)**2, A2 = Math.PI * (getInternalDim(d2)/2000)**2;
+                    zeta = interpolateValue(angle_exp, A2/A1, EXPANSION_ZETA);
+                    A = A1; v = Q/A1;
+                    name = `Udvidelse`; details = `Ø${d1} -> Ø${d2}`;
                     break;
                 }
                 case 'contraction': {
                     const d1 = parseLocalFloat(document.getElementById('sys_d1').value);
                     const d2 = parseLocalFloat(document.getElementById('sys_d2').value);
-                    const angle = parseLocalFloat(document.getElementById('sys_angle_dim').value);
-                    const A1 = Math.PI * (getInternalDim(d1) / 2000) ** 2;
-                    const A2 = Math.PI * (getInternalDim(d2) / 2000) ** 2;
-                    zeta = interpolateValue(angle, A2 / A1, CONTRACTION_ZETA);
-                    A = A2; // Tryktab baseres på udløbshastighed
-                    newComponent.name = `Indsnævring Ø${d1}-Ø${d2}`;
-                    newComponent.details = `${angle}°`;
+                    inletDimension = { shape: 'round', d: d1 };
+                    outletDimension = { shape: 'round', d: d2 };
+                    const angle_con = parseLocalFloat(document.getElementById('sys_angle_dim').value);
+                    const A1_con = Math.PI * (getInternalDim(d1)/2000)**2, A2_con = Math.PI * (getInternalDim(d2)/2000)**2;
+                    zeta = interpolateValue(angle_con, A2_con/A1_con, CONTRACTION_ZETA);
+                    A = A2_con; v = Q/A2_con;
+                    name = `Indsnævring`; details = `Ø${d1} -> Ø${d2}`;
                     break;
                 }
-                default:
-                    // Dette sker, hvis componentType er 'fitting', men fittingType er tom.
-                    // Vi har allerede tjekket for dette i starten, så det burde ikke ske.
-                    return; 
+                case 'tee_sym': case 'tee_asym': {
+                    const isSymTee = fittingType === 'tee_sym';
+                    const d_in = parseLocalFloat(document.getElementById('sys_tee_d_in').value);
+                    inletDimension = { shape: 'round', d: d_in };
+                    
+                    const q_straight = parseLocalFloat(document.getElementById('sys_tee_q_straight').value);
+                    const q_branch = parseLocalFloat(document.getElementById('sys_tee_q_branch').value);
+                    const chosenPath = document.querySelector('input[name="sysTeePath"]:checked').value;
+                    
+                    if (Math.abs(airflow - (q_straight + q_branch)) > 1) { alert("Luftmængder for T-stykke stemmer ikke overens."); return; }
+                    
+                    const d_straight = isSymTee ? d_in : parseLocalFloat(document.getElementById('sys_tee_d_straight').value);
+                    const d_branch = isSymTee ? d_in : parseLocalFloat(document.getElementById('sys_tee_d_branch').value);
+                    const teeResults = calculateTeePressureLoss({ q_in: airflow, q_straight, q_branch }, { d_in, d_straight, d_branch }, RHO);
+                        
+                    if (chosenPath === 'straight') {
+                        pressureLoss = teeResults.loss_straight; v = teeResults.details_straight.v_ms; newAirflowAfter = q_straight; name = `T-stykke (Ligeud)`;
+                        calculationDetails = teeResults.details_straight; outletDimension = { shape: 'round', d: d_straight };
+                    } else {
+                        pressureLoss = teeResults.loss_branch; v = teeResults.details_branch.v_ms; newAirflowAfter = q_branch; name = `T-stykke (Afgrening)`;
+                        calculationDetails = teeResults.details_branch; outletDimension = { shape: 'round', d: d_branch };
+                    }
+                    details = `q=${formatLocalFloat(newAirflowAfter, 0)} m³/h`; velocity = v;
+                    break;
+                }
+                case 'tee_bullhead': {
+                    const d_in = parseLocalFloat(document.getElementById('sys_tee_d_in').value);
+                    inletDimension = { shape: 'round', d: d_in };
+
+                    const q_out1 = parseLocalFloat(document.getElementById('sys_tee_q_out1').value);
+                    const q_out2 = parseLocalFloat(document.getElementById('sys_tee_q_out2').value);
+                    if (Math.abs(airflow - (q_out1 + q_out2)) > 1) { alert("Luftmængder for Dobbelt T-stykke stemmer ikke overens."); return; }
+                    
+                    const d_out1 = parseLocalFloat(document.getElementById('sys_tee_d_out1').value);
+                    const d_out2 = parseLocalFloat(document.getElementById('sys_tee_d_out2').value);
+                    const bullheadResults = calculateBullheadTeeLoss({ q_in: airflow, q_out1, q_out2 }, { d_in, d_out1, d_out2 }, RHO);
+                    
+                    const chosenPath = document.querySelector('input[name="sysTeePath"]:checked').value;
+                    if (chosenPath === 'path1') {
+                        pressureLoss = bullheadResults.loss1; v = bullheadResults.details1.v_ms; newAirflowAfter = q_out1;
+                        name = `Dobbelt T-stykke (Gren 1)`; details = `Tab for Gren 2: ${formatLocalFloat(bullheadResults.loss2, 2)} Pa`;
+                        calculationDetails = bullheadResults.details1; outletDimension = { shape: 'round', d: d_out1 };
+                    } else { // path2
+                        pressureLoss = bullheadResults.loss2; v = bullheadResults.details2.v_ms; newAirflowAfter = q_out2;
+                        name = `Dobbelt T-stykke (Gren 2)`; details = `Tab for Gren 1: ${formatLocalFloat(bullheadResults.loss1, 2)} Pa`;
+                        calculationDetails = bullheadResults.details2; outletDimension = { shape: 'round', d: d_out2 };
+                    }
+                    velocity = v;
+                    break;
+                }
             }
-
-            v = Q / A;
-            Pdyn_Pa = (RHO / 2) * v ** 2;
-            loss = zeta * Pdyn_Pa;
-
-            newComponent.velocity = v;
-            newComponent.pressureLoss = loss;
-            newComponent.calculationDetails = { type: fittingType, A_m2: A, v_ms: v, zeta: zeta, Pdyn_Pa: Pdyn_Pa };
+            if (!fittingType.startsWith('tee')) {
+                Pdyn_Pa = (RHO / 2) * v**2;
+                pressureLoss = zeta * Pdyn_Pa;
+                velocity = v;
+                calculationDetails = { Q_m3s: Q, A_m2: A, v_ms: v, zeta: zeta, Pdyn_Pa: Pdyn_Pa, type: fittingType };
+            }
+            
+            addTransitionIfNeeded(inletDimension);
+            newComponent = { ...newComponent, type: fittingType, name, details, velocity, pressureLoss, calculationDetails, newAirflowAfter: newAirflowAfter, outletDimension: outletDimension };
         }
-
+        
+        systemComponents.push(newComponent);
+        
     } catch (e) {
-        alert('Fejl i input-felter. Kontroller venligst værdierne.\n\nFejlmeddelelse: ' + e.message);
-        return; // Stop eksekvering ved fejl
+        alert('Fejl ved tilføjelse af komponent: ' + e.message);
+        return;
     }
 
-    // --- 3. Opdater system og brugerflade ---
-    systemComponents.push(newComponent);
-    renderSystem(); // Opdater tabellen med komponenter
-}
-        
+    // --- 4. OPDATER UI ---
+    renderSystem();
+}      
 function renderSystem() {
     systemComponentsContainer.innerHTML = '';
     totalPressureDropContainer.innerHTML = '';
@@ -1444,23 +1512,30 @@ function renderSystem() {
     }
 
     let totalPressureDrop = 0;
-    const tableRows = systemComponents.map(c => {
+    const tableRows = systemComponents.map((c, index) => {
         totalPressureDrop += c.pressureLoss;
         const velocityText = c.velocity ? `${formatLocalFloat(c.velocity, 2)} m/s` : 'N/A';
-        // Add the details button if calculationDetails exist
+        
         const detailsButton = c.calculationDetails 
             ? `<button class="details-btn" onclick="showSystemComponentDetails(${c.id})">ⓘ</button>`
             : '';
 
+        const deleteButton = (index === systemComponents.length - 1)
+            ? `<button class="delete-btn" onclick="handleDeleteLastComponent()">&times;</button>`
+            : '';
+
+    // Tilføjer en speciel klasse til autogenererede rækker
+    const rowClass = c.isAutoGenerated ? 'auto-generated' : '';
+
         return `
-            <tr>
+            <tr class="${rowClass}">
                 <td>${c.name}<br><small>${c.details}</small></td>
                 <td>${formatLocalFloat(c.airflow, 0)} m³/h</td>
                 <td>${velocityText}</td>
                 <td>${formatLocalFloat(c.pressureLoss, 2)} Pa</td>
                 <td>
                     ${detailsButton}
-                    <button class="delete-btn" onclick="handleDeleteComponent(${c.id})">&times;</button>
+                    ${deleteButton}
                 </td>
             </tr>
         `;
@@ -1490,6 +1565,7 @@ function renderSystem() {
         </div>
     `;
 }
+
 
 function getSystemFormHtml() {
     return `
@@ -1524,6 +1600,73 @@ function getSystemFormHtml() {
             </form>
         </section>
     `;
+}
+
+function handleDeleteLastComponent() {
+    if (systemComponents.length > 0) {
+        // Fjern den sidste komponent fra listen
+        systemComponents.pop();
+    }
+    
+    // Gen-tegn systemet
+    renderSystem();
+}
+
+function recalculateAirflowFromIndex(startIndex) {
+    // Find den sidste kendte luftmængde FØR det punkt, hvorfra vi skal genberegne
+    // Hvis vi sletter det første element, bruger vi start-luftmængden
+    const initialAirflow = parseLocalFloat(document.getElementById('system_airflow').value);
+    let lastKnownAirflow = startIndex > 0 ? systemComponents[startIndex - 1].newAirflowAfter : initialAirflow;
+
+    // Hvis den foregående komponent ikke ændrede luftmængden, så find den seneste ændring
+    if (startIndex > 0 && lastKnownAirflow === undefined) {
+         for (let i = startIndex - 1; i >= 0; i--) {
+            if (systemComponents[i].newAirflowAfter !== undefined) {
+                lastKnownAirflow = systemComponents[i].newAirflowAfter;
+                break;
+            }
+         }
+         // Hvis ingen tidligere komponent har ændret luftmængden, brug start-værdien
+         if (lastKnownAirflow === undefined) {
+            lastKnownAirflow = initialAirflow;
+         }
+    }
+
+
+    // Løb igennem de resterende komponenter og opdater deres værdier
+    const temp = parseLocalFloat(document.getElementById('temperature').value);
+    const { RHO, NU } = getAirProperties(temp);
+
+    for (let i = startIndex; i < systemComponents.length; i++) {
+        let component = systemComponents[i];
+        component.airflow = lastKnownAirflow; // Opdater komponentens luftmængde
+
+        const Q = component.airflow / 3600;
+
+        // Genberegn tryktab baseret på den potentielt nye luftmængde
+        // Dette kræver, at vi genbruger beregningslogikken fra handleAddComponent
+        if (component.type === 'straightDuct') {
+            const performance = getPerformance(Q, 0, { shape: component.calculationDetails.shape, a: component.calculationDetails.a, b: component.calculationDetails.b }, RHO, NU);
+            component.pressureLoss = performance.pressureDrop * component.calculationDetails.length;
+            component.velocity = performance.velocity;
+        } else if (component.type.includes('tee')) {
+            // Håndtering af T-stykker er komplekst, da deres eget tryktab afhænger af den INDGÅENDE luftmængde,
+            // og de definerer en ny UDGÅENDE luftmængde.
+            // For nu holder vi det simpelt: vi antager, at sletning primært skal justere flowet EFTER.
+            // En fuld genberegning af selve T-stykkets tab ville kræve de oprindelige input-værdier.
+            lastKnownAirflow = component.newAirflowAfter; // Sæt den nye "sidst kendte" luftmængde
+        } else if (component.type !== 'manualLoss') { // Genberegn andre formstykker
+             const { zeta, A_m2, v_ms_old, Pdyn_Pa_old } = component.calculationDetails;
+             const v = Q / A_m2;
+             const Pdyn_Pa = (RHO / 2) * v ** 2;
+             component.pressureLoss = zeta * Pdyn_Pa;
+             component.velocity = v;
+        }
+        // Manuelt tab ændres ikke
+    }
+    
+    // Opdater hoved-inputfeltet med den sidst kendte luftmængde for systemets ende
+    document.getElementById('system_airflow').value = formatLocalFloat(lastKnownAirflow, 0);
 }
 
 function showSystemComponentDetails(id) {
