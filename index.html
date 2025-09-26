@@ -1320,8 +1320,87 @@ function handleAddComponent(event) {
                     }
                     document.getElementById('system_airflow').value = formatLocalFloat(teeResults.q_out, 0);
                 }
-            } else {
-                // ... existing logic for bends and transitions
+            } else { // This block handles non-Tee fittings
+                newComponent.airflow = airflow; // Use the current system airflow
+                let zeta, A, v, Pdyn_Pa, loss, details, name, calculationDetails;
+                
+                switch(fittingType) {
+                    case 'bend_circ':
+                        const d = parseLocalFloat(document.getElementById('sys_d').value);
+                        const angle = parseLocalFloat(document.getElementById('sys_angle').value);
+                        const rd = parseLocalFloat(document.getElementById('sys_rd').value);
+                        const rd_key = rd < 1.25 ? "rd1_0" : "rd1_5";
+                        zeta = interpolateValue(angle, d, CIRCULAR_BEND_ZETA[rd_key]);
+                        A = Math.PI * (getInternalDim(d)/2000)**2;
+                        v = Q/A;
+                        Pdyn_Pa = (RHO / 2) * v ** 2;
+                        loss = zeta * Pdyn_Pa;
+                        
+                        name = `Bøjning Cirk. Ø${d}`;
+                        details = `${angle}° R/d=${rd}`;
+                        velocity = v;
+                        calculationDetails = { type: fittingType, A_m2: A, v_ms: v, zeta: zeta, Pdyn_Pa: Pdyn_Pa };
+                        newComponent = { ...newComponent, name, details, velocity, pressureLoss: loss, calculationDetails };
+                        break;
+
+                    case 'bend_rect':
+                        const h = parseLocalFloat(document.getElementById('sys_h').value);
+                        const w = parseLocalFloat(document.getElementById('sys_w').value);
+                        const angle_r = parseLocalFloat(document.getElementById('sys_angle_r').value);
+                        const rh = parseLocalFloat(document.getElementById('sys_rh').value);
+                        const zeta_base = interpolateValue(h/w, rh, RECTANGULAR_BEND_ZETA.mainTable);
+                        const k_factor = interpolateValue(angle_r, null, RECTANGULAR_BEND_ZETA.kFactor);
+                        zeta = zeta_base * k_factor;
+                        let h_int = getInternalDim(h)/1000, w_int = getInternalDim(w)/1000;
+                        const d_hyd = (2 * h_int * w_int) / (h_int + w_int);
+                        A = Math.PI * (d_hyd/2)**2;
+                        v = Q/A;
+                        Pdyn_Pa = (RHO / 2) * v ** 2;
+                        loss = zeta * Pdyn_Pa;
+
+                        name = `Bøjning Rekt. ${h}x${w}`;
+                        details = `${angle_r}° R/H=${rh}`;
+                        velocity = v;
+                        calculationDetails = { type: fittingType, A_m2: A, v_ms: v, zeta: zeta, Pdyn_Pa: Pdyn_Pa };
+                        newComponent = { ...newComponent, name, details, velocity, pressureLoss: loss, calculationDetails };
+                        break;
+                    
+                    case 'expansion':
+                        const d1_exp = parseLocalFloat(document.getElementById('sys_d1').value);
+                        const d2_exp = parseLocalFloat(document.getElementById('sys_d2').value);
+                        const angle_exp = parseLocalFloat(document.getElementById('sys_angle_dim').value);
+                        const A1_exp = Math.PI * (getInternalDim(d1_exp)/2000)**2;
+                        const A2_exp = Math.PI * (getInternalDim(d2_exp)/2000)**2;
+                        zeta = interpolateValue(angle_exp, A2_exp/A1_exp, EXPANSION_ZETA);
+                        v = Q/A1_exp; // Use inlet velocity
+                        Pdyn_Pa = (RHO / 2) * v ** 2;
+                        loss = zeta * Pdyn_Pa;
+                        
+                        name = `Udvidelse Ø${d1_exp}-Ø${d2_exp}`;
+                        details = `${angle_exp}°`;
+                        velocity = v;
+                        calculationDetails = { type: fittingType, A_m2: A1_exp, v_ms: v, zeta: zeta, Pdyn_Pa: Pdyn_Pa };
+                        newComponent = { ...newComponent, name, details, velocity, pressureLoss: loss, calculationDetails };
+                        break;
+                    
+                    case 'contraction':
+                        const d1_con = parseLocalFloat(document.getElementById('sys_d1').value);
+                        const d2_con = parseLocalFloat(document.getElementById('sys_d2').value);
+                        const angle_con = parseLocalFloat(document.getElementById('sys_angle_dim').value);
+                        const A1_con = Math.PI * (getInternalDim(d1_con)/2000)**2;
+                        const A2_con = Math.PI * (getInternalDim(d2_con)/2000)**2;
+                        zeta = interpolateValue(angle_con, A2_con/A1_con, CONTRACTION_ZETA);
+                        v = Q/A2_con; // Use outlet velocity
+                        Pdyn_Pa = (RHO / 2) * v ** 2;
+                        loss = zeta * Pdyn_Pa;
+
+                        name = `Indsnævring Ø${d1_con}-Ø${d2_con}`;
+                        details = `${angle_con}°`;
+                        velocity = v;
+                        calculationDetails = { type: fittingType, A_m2: A2_con, v_ms: v, zeta: zeta, Pdyn_Pa: Pdyn_Pa };
+                        newComponent = { ...newComponent, name, details, velocity, pressureLoss: loss, calculationDetails };
+                        break;
+                }
             }
             newComponent = { ...newComponent, type: fittingType, name, details, velocity, pressureLoss, calculationDetails };
         }
