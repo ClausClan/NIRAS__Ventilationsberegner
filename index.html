@@ -796,7 +796,6 @@ function handleFittingCalculation(event) {
     } catch (error) {
         renderError(error.message, fittingsResultsContainer);
     }
-}
             
         function calculateFrictionFactor(hydraulicDiameter, velocity, NU) {
             const Re = (velocity * hydraulicDiameter) / NU;
