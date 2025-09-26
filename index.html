@@ -337,11 +337,12 @@
         const K_ROUGHNESS = 0.00015;
         const WALL_THICKNESS_MM = 0.5;
         
+        const K_ROUGHNESS = 0.00015;
+        const WALL_THICKNESS_MM = 0.5;
         const CIRCULAR_BEND_ZETA = { "rd1_0": { "45": { "75": 0.20, "100": 0.17, "125": 0.14, "150": 0.11, "200": 0.11, "250": 0.11 }, "90": { "75": 0.44, "100": 0.37, "125": 0.30, "150": 0.25, "200": 0.24, "250": 0.24 } }, "rd1_5": { "45": { "75": 0.18, "100": 0.13, "125": 0.10, "150": 0.08, "200": 0.07, "250": 0.07 }, "90": { "75": 0.30, "100": 0.21, "125": 0.16, "150": 0.14, "200": 0.11, "250": 0.11 } } };
         const RECTANGULAR_BEND_ZETA = { mainTable: { "0.25": { "0.5": 1.53, "0.75": 0.57, "1": 0.27, "1.5": 0.22, "2": 0.20 }, "0.50": { "0.5": 1.38, "0.75": 0.52, "1": 0.25, "1.5": 0.20, "2": 0.18 }, "0.75": { "0.5": 1.29, "0.75": 0.48, "1": 0.23, "1.5": 0.19, "2": 0.16 }, "1.00": { "0.5": 1.18, "0.75": 0.44, "1": 0.21, "1.5": 0.17, "2": 0.15 }, "2.00": { "0.5": 1.06, "0.75": 0.40, "1": 0.19, "1.5": 0.15, "2": 0.14 }, "3.00": { "0.5": 1.00, "0.75": 0.39, "1": 0.18, "1.5": 0.14, "2": 0.13 }, "4.00": { "0.5": 1.00, "0.75": 0.39, "1": 0.18, "1.5": 0.14, "2": 0.13 }, "5.00": { "0.5": 1.06, "0.75": 0.40, "1": 0.19, "1.5": 0.15, "2": 0.14 }, "6.00": { "0.5": 1.12, "0.75": 0.42, "1": 0.20, "1.5": 0.16, "2": 0.14 }, "7.00": { "0.5": 1.16, "0.75": 0.43, "1": 0.21, "1.5": 0.17, "2": 0.15 }, "8.00": { "0.5": 1.18, "0.75": 0.44, "1": 0.21, "1.5": 0.17, "2": 0.15 } }, kFactor: { "30": 0.45, "45": 0.60, "60": 0.78, "90": 1.00, "180": 1.40 } };
         const EXPANSION_ZETA = { "10": { "2": 0.11, "4": 0.16, "10": 0.21, "16": 0.21 }, "20": { "2": 0.13, "4": 0.22, "10": 0.28, "16": 0.29 }, "30": { "2": 0.19, "4": 0.30, "10": 0.38, "16": 0.38 }, "40": { "2": 0.32, "4": 0.46, "10": 0.59, "16": 0.60 }, "45": { "2": 0.33, "4": 0.61, "10": 0.76, "16": 0.84 }, "60": { "2": 0.33, "4": 0.68, "10": 0.80, "16": 0.88 }, "90": { "2": 0.32, "4": 0.64, "10": 0.83, "16": 0.88 }, "120":{ "2": 0.31, "4": 0.63, "10": 0.84, "16": 0.88 }, "150":{ "2": 0.30, "4": 0.62, "10": 0.83, "16": 0.88 }, "180":{ "2": 0.30, "4": 0.62, "10": 0.83, "16": 0.88 } };
         const CONTRACTION_ZETA = { "10": { "0.1": 0.05, "0.17": 0.05, "0.25": 0.05, "0.5": 0.05 }, "15": { "0.1": 0.05, "0.17": 0.04, "0.25": 0.04, "0.5": 0.05 }, "30": { "0.1": 0.05, "0.17": 0.04, "0.25": 0.04, "0.5": 0.05 }, "45": { "0.1": 0.05, "0.17": 0.04, "0.25": 0.04, "0.5": 0.05 }, "60": { "0.1": 0.07, "0.17": 0.06, "0.25": 0.06, "0.5": 0.06 }, "75": { "0.1": 0.08, "0.17": 0.07, "0.25": 0.07, "0.5": 0.06 }, "90": { "0.1": 0.19, "0.17": 0.18, "0.25": 0.17, "0.5": 0.12 }, "120":{ "0.1": 0.29, "0.17": 0.28, "0.25": 0.27, "0.5": 0.18 }, "150":{ "0.1": 0.37, "0.17": 0.36, "0.25": 0.35, "0.5": 0.24 }, "180":{ "0.1": 0.43, "0.17": 0.42, "0.25": 0.41, "0.5": 0.26 } };
-
         const STANDARD_ROUND_SIZES_MM = [63, 80, 100, 125, 160, 200, 250, 315, 355, 400, 460, 500, 630, 710, 800, 1000, 1250, 1400, 1500, 1600, 2000];
         const STANDARD_RECT_SIZES_MM = (() => { let arr = []; for (let i = 100; i <= 450; i += 50) arr.push(i); for (let i = 500; i <= 2000; i += 100) arr.push(i); return arr; })();
         let fittingsList = [];
@@ -1320,8 +1321,79 @@ function handleAddComponent(event) {
                     }
                     document.getElementById('system_airflow').value = formatLocalFloat(teeResults.q_out, 0);
                 }
-            } else {
-                // ... existing logic for bends and transitions
+            } else { // existing logic for bends and transitions
+                switch(fittingType) {
+                case 'bend_circ':
+                    const d = parseLocalFloat(document.getElementById('sys_d').value);
+                    const angle = parseLocalFloat(document.getElementById('sys_angle').value);
+                    const rd = parseLocalFloat(document.getElementById('sys_rd').value);
+                    const rd_key = rd < 1.25 ? "rd1_0" : "rd1_5";
+                    zeta = interpolateValue(angle, d, CIRCULAR_BEND_ZETA[rd_key]);
+                    A = Math.PI * (getInternalDim(d)/2000)**2;
+                    v = Q/A;
+                    Pdyn_Pa = (RHO / 2) * v ** 2;
+                    pressureLoss = zeta * Pdyn_Pa;
+                    
+                    name = `Bøjning Cirk. Ø${d}`;
+                    details = `${angle}° R/d=${rd}`;
+                    velocity = v;
+                    calculationDetails = { type: fittingType, A_m2: A, v_ms: v, zeta: zeta, Pdyn_Pa: Pdyn_Pa };
+                    break;
+
+                case 'bend_rect':
+                    const h = parseLocalFloat(document.getElementById('sys_h').value);
+                    const w = parseLocalFloat(document.getElementById('sys_w').value);
+                    const angle_r = parseLocalFloat(document.getElementById('sys_angle_r').value);
+                    const rh = parseLocalFloat(document.getElementById('sys_rh').value);
+                    const zeta_base = interpolateValue(h/w, rh, RECTANGULAR_BEND_ZETA.mainTable);
+                    const k_factor = interpolateValue(angle_r, null, RECTANGULAR_BEND_ZETA.kFactor);
+                    zeta = zeta_base * k_factor;
+                    let h_int = getInternalDim(h)/1000, w_int = getInternalDim(w)/1000;
+                    const d_hyd = (2 * h_int * w_int) / (h_int + w_int);
+                    A = Math.PI * (d_hyd/2)**2;
+                    v = Q/A;
+                    Pdyn_Pa = (RHO / 2) * v ** 2;
+                    pressureLoss = zeta * Pdyn_Pa;
+
+                    name = `Bøjning Rekt. ${h}x${w}`;
+                    details = `${angle_r}° R/H=${rh}`;
+                    velocity = v;
+                    calculationDetails = { type: fittingType, A_m2: A, v_ms: v, zeta: zeta, Pdyn_Pa: Pdyn_Pa };
+                    break;
+                
+                case 'expansion':
+                    const d1_exp = parseLocalFloat(document.getElementById('sys_d1').value);
+                    const d2_exp = parseLocalFloat(document.getElementById('sys_d2').value);
+                    const angle_exp = parseLocalFloat(document.getElementById('sys_angle_dim').value);
+                    const A1_exp = Math.PI * (getInternalDim(d1_exp)/2000)**2;
+                    const A2_exp = Math.PI * (getInternalDim(d2_exp)/2000)**2;
+                    zeta = interpolateValue(angle_exp, A2_exp/A1_exp, EXPANSION_ZETA);
+                    v = Q/A1_exp; // Use inlet velocity
+                    Pdyn_Pa = (RHO / 2) * v ** 2;
+                    pressureLoss = zeta * Pdyn_Pa;
+                    
+                    name = `Udvidelse Ø${d1_exp}-Ø${d2_exp}`;
+                    details = `${angle_exp}°`;
+                    velocity = v;
+                    calculationDetails = { type: fittingType, A_m2: A1_exp, v_ms: v, zeta: zeta, Pdyn_Pa: Pdyn_Pa };
+                    break;
+                
+                case 'contraction':
+                    const d1_con = parseLocalFloat(document.getElementById('sys_d1').value);
+                    const d2_con = parseLocalFloat(document.getElementById('sys_d2').value);
+                    const angle_con = parseLocalFloat(document.getElementById('sys_angle_dim').value);
+                    const A1_con = Math.PI * (getInternalDim(d1_con)/2000)**2;
+                    const A2_con = Math.PI * (getInternalDim(d2_con)/2000)**2;
+                    zeta = interpolateValue(angle_con, A2_con/A1_con, CONTRACTION_ZETA);
+                    v = Q/A2_con; // Use outlet velocity
+                    Pdyn_Pa = (RHO / 2) * v ** 2;
+                    pressureLoss = zeta * Pdyn_Pa;
+
+                    name = `Indsnævring Ø${d1_con}-Ø${d2_con}`;
+                    details = `${angle_con}°`;
+                    velocity = v;
+                    calculationDetails = { type: fittingType, A_m2: A2_con, v_ms: v, zeta: zeta, Pdyn_Pa: Pdyn_Pa };
+                    break;
             }
             newComponent = { ...newComponent, type: fittingType, name, details, velocity, pressureLoss, calculationDetails };
         }
