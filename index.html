@@ -785,6 +785,11 @@ function handleFittingCalculation(event) {
                     A = A2_con;
                     name = `Indsnævring Ø${d1_con}-Ø${d2_con}`;
                     break;
+
+                    // --- TILFØJ DENNE DEFAULT CASE ---
+                    default:
+                    // Hvis 'type' er tom eller ukendt, stop eksekveringen her.
+                    throw new Error("Vælg venligst en gyldig type formstykke.");
             }
             
             Pdyn_Pa = (RHO / 2) * v ** 2;
@@ -1252,6 +1257,16 @@ function handleAddComponent(event) {
         return;
     }
 
+    // Rettelse: Hent fittingType her, hvis det er et formstykke
+    const fittingType = (componentType === 'fitting') 
+        ? document.getElementById('systemFittingType').value 
+        : null;
+
+    if (componentType === 'fitting' && !fittingType) {
+        alert('Vælg venligst en specifik type formstykke.');
+        return;
+    }
+
     const airflow = parseLocalFloat(document.getElementById('system_airflow').value);
     const temp = parseLocalFloat(document.getElementById('temperature').value);
 
@@ -1260,15 +1275,13 @@ function handleAddComponent(event) {
         return;
     }
 
-    // Hent luftens fysiske egenskaber
     const { RHO, NU } = getAirProperties(temp);
-    const Q = airflow / 3600; // Konverter fra m³/h til m³/s
+    const Q = airflow / 3600;
 
-    // Forbered det nye komponent-objekt
     const newComponent = {
         id: Date.now(),
         airflow: airflow,
-        type: componentType
+        type: fittingType || componentType // Brug fittingType hvis den findes
     };
 
     // --- 2. Beregn tryktab baseret på komponenttype ---
@@ -1305,11 +1318,11 @@ function handleAddComponent(event) {
             newComponent.velocity = null;
             newComponent.calculationDetails = null;
 
-        } else if (componentType.startsWith('tee_')) { // Samlet logik for T-stykker
+        } else if (fittingType && fittingType.startsWith('tee_')) { // Logik KUN for T-stykker
             const flowType = document.querySelector('input[name="sysTeeFlowType"]:checked').value;
             const q_straight = parseLocalFloat(document.getElementById('sys_tee_q_straight').value);
             const q_branch = parseLocalFloat(document.getElementById('sys_tee_q_branch').value);
-            const isSymTee = componentType === 'tee_sym';
+            const isSymTee = fittingType === 'tee_sym';
 
             const d_in_common = parseLocalFloat(document.getElementById('sys_tee_d_in').value);
             const d_straight = isSymTee ? d_in_common : parseLocalFloat(document.getElementById('sys_tee_d_straight').value);
@@ -1324,10 +1337,10 @@ function handleAddComponent(event) {
                 
                 let newAirflow;
                 if (chosenPath === 'straight') {
-                    Object.assign(newComponent, { name: `T-stykke (Ligeud)`, details: `q=${formatLocalFloat(q_straight,0)} m³/h`, velocity: teeResults.details_straight.v_ms, pressureLoss: teeResults.loss_straight, calculationDetails: { ...teeResults.details_straight, type: componentType, chosenPath: 'Ligeud' } });
+                    Object.assign(newComponent, { name: `T-stykke (Ligeud)`, details: `q=${formatLocalFloat(q_straight,0)} m³/h`, velocity: teeResults.details_straight.v_ms, pressureLoss: teeResults.loss_straight, calculationDetails: { ...teeResults.details_straight, type: fittingType, chosenPath: 'Ligeud' } });
                     newAirflow = q_straight;
                 } else {
-                    Object.assign(newComponent, { name: `T-stykke (Afgrening)`, details: `q=${formatLocalFloat(q_branch,0)} m³/h`, velocity: teeResults.details_branch.v_ms, pressureLoss: teeResults.loss_branch, calculationDetails: { ...teeResults.details_branch, type: componentType, chosenPath: 'Afgrening' } });
+                    Object.assign(newComponent, { name: `T-stykke (Afgrening)`, details: `q=${formatLocalFloat(q_branch,0)} m³/h`, velocity: teeResults.details_branch.v_ms, pressureLoss: teeResults.loss_branch, calculationDetails: { ...teeResults.details_branch, type: fittingType, chosenPath: 'Afgrening' } });
                     newAirflow = q_branch;
                 }
                 document.getElementById('system_airflow').value = formatLocalFloat(newAirflow, 0);
@@ -1337,17 +1350,17 @@ function handleAddComponent(event) {
                 const chosenPath = document.querySelector('input[name="sysTeePath"]:checked').value;
 
                 if (chosenPath === 'straight') {
-                    Object.assign(newComponent, { name: `T-stykke Samle (fra Ligeud)`, details: `q=${formatLocalFloat(q_straight,0)} m³/h`, velocity: teeResults.details_straight.v_ms, pressureLoss: teeResults.loss_straight, calculationDetails: { ...teeResults.details_straight, type: componentType, chosenPath: 'Ligeud' } });
+                    Object.assign(newComponent, { name: `T-stykke Samle (fra Ligeud)`, details: `q=${formatLocalFloat(q_straight,0)} m³/h`, velocity: teeResults.details_straight.v_ms, pressureLoss: teeResults.loss_straight, calculationDetails: { ...teeResults.details_straight, type: fittingType, chosenPath: 'Ligeud' } });
                 } else {
-                    Object.assign(newComponent, { name: `T-stykke Samle (fra Afgr.)`, details: `q=${formatLocalFloat(q_branch,0)} m³/h`, velocity: teeResults.details_branch.v_ms, pressureLoss: teeResults.loss_branch, calculationDetails: { ...teeResults.details_branch, type: componentType, chosenPath: 'Afgrening' } });
+                    Object.assign(newComponent, { name: `T-stykke Samle (fra Afgr.)`, details: `q=${formatLocalFloat(q_branch,0)} m³/h`, velocity: teeResults.details_branch.v_ms, pressureLoss: teeResults.loss_branch, calculationDetails: { ...teeResults.details_branch, type: fittingType, chosenPath: 'Afgrening' } });
                 }
                 document.getElementById('system_airflow').value = formatLocalFloat(teeResults.q_out, 0);
             }
 
-        } else { // Alle andre formstykker
+        } else if (componentType === 'fitting') { // Alle andre formstykker
             let zeta, A, v, Pdyn_Pa, loss;
 
-            switch (componentType) {
+            switch (fittingType) {
                 case 'bend_circ': {
                     const d = parseLocalFloat(document.getElementById('sys_d').value);
                     const angle = parseLocalFloat(document.getElementById('sys_angle').value);
@@ -1397,7 +1410,9 @@ function handleAddComponent(event) {
                     break;
                 }
                 default:
-                    throw new Error('Ukendt formstykke valgt i systemberegningen.');
+                    // Dette sker, hvis componentType er 'fitting', men fittingType er tom.
+                    // Vi har allerede tjekket for dette i starten, så det burde ikke ske.
+                    return; 
             }
 
             v = Q / A;
@@ -1406,7 +1421,7 @@ function handleAddComponent(event) {
 
             newComponent.velocity = v;
             newComponent.pressureLoss = loss;
-            newComponent.calculationDetails = { type: componentType, A_m2: A, v_ms: v, zeta: zeta, Pdyn_Pa: Pdyn_Pa };
+            newComponent.calculationDetails = { type: fittingType, A_m2: A, v_ms: v, zeta: zeta, Pdyn_Pa: Pdyn_Pa };
         }
 
     } catch (e) {
