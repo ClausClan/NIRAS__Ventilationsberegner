@@ -3,7 +3,7 @@
 <head>
         <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NIRAS Ventilationsberegner_v0.13.2_dev</title>
+    <title>NIRAS Ventilationsberegner_v0.13.4_dev</title>
     <link rel="icon" type="image/png" href="favicon.png">
     <link rel="manifest" href="manifest.json">
     <style>
@@ -109,6 +109,58 @@
 	    color: var(--error-color);
 	    font-weight: bold;
 	}
+
+
+	/* Styling for system-menuen */
+.system-menu-container {
+    position: relative;
+    display: inline-block; /* Gør at menuen kan placeres præcist */
+}
+
+.system-menu-btn {
+    background: var(--input-bg-color);
+    border: 1px solid var(--border-color);
+    border-radius: 50%;
+    width: 32px;
+    height: 32px;
+    cursor: pointer;
+    font-size: 1.2rem;
+    color: var(--text-muted-color);
+    margin-left: 10px;
+}
+.system-menu-btn:hover {
+    border-color: var(--primary-color);
+    color: var(--primary-color);
+}
+
+.system-menu-dropdown {
+    position: absolute;
+    right: 0;
+    top: 40px; /* Lige under knappen */
+    background-color: var(--content-bg-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    box-shadow: var(--card-shadow, 0 4px 8px rgba(0,0,0,0.2));
+    z-index: 10;
+    min-width: 160px;
+    overflow: hidden; /* Sikrer at indhold holder sig indenfor border-radius */
+}
+
+.system-menu-dropdown a {
+    color: var(--text-color);
+    padding: 12px 16px;
+    text-decoration: none;
+    display: block;
+    font-size: 0.9rem;
+}
+
+.system-menu-dropdown a:hover {
+    background-color: var(--border-color);
+}
+
+.hidden {
+    display: none;
+}
 
 	.fittings-table .auto-generated td {
 	    color: var(--error-color); /* Bruger din eksisterende "fejl"-farve */
@@ -305,6 +357,62 @@
         
         .app-footer { text-align: center; padding: 20px 0 0 0; }
         .app-footer p { font-size: 0.8rem; color: var(--text-muted-color); }
+
+@media print {
+    /* Skjul hele app'en, når der printes */
+    body > .container, .app-footer, .modal {
+        display: none !important;
+    }
+
+    /* Vis kun print-containeren */
+    #print-container {
+        display: block !important;
+    }
+    
+    /* Grundlæggende styling for print-dokumentet */
+    .print-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 20px;
+        font-size: 10pt;
+    }
+
+    /* NYT: Nulstil styling for overskrifter ved print */
+    #print-container h1, #print-container h2, #print-container h3 {
+        color: #000000; /* Gør teksten helt sort */
+        text-shadow: none; /* Fjerner enhver glød-effekt */
+    }
+
+    .print-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 20px;
+        font-size: 10pt;
+    }
+    .print-table th, .print-table td {
+        border: 1px solid #ccc;
+        padding: 8px;
+        text-align: left;
+    }
+    .print-table th {
+        background-color: #f2f2f2;
+        font-weight: bold;
+    }
+    .print-table tfoot td {
+        font-weight: bold;
+    }
+    .print-summary {
+        margin-top: 20px;
+        padding-top: 10px;
+        border-top: 2px solid #000;
+    }
+}
+
+/* Skjuler print-containeren som standard */
+#print-container {
+    display: none;
+}
+
     </style>
 </head>
 <body>
@@ -346,7 +454,7 @@
             <div id="system" class="tab-content hidden"></div>
         </div>
         <footer class="app-footer">
-            <p>AppVersion 0.13.2_dev --- Spørgsmål kontakt CWA</p>
+            <p>AppVersion 0.13.4_dev --- Spørgsmål kontakt CWA</p>
         </footer>
     </div>
     
@@ -1651,28 +1759,49 @@ function renderSystem() {
 }
 
 function getSystemFormHtml() {
-    // Sørger for at lytte efter ændringer i den globale systemtype
     setTimeout(() => {
         document.getElementsByName('systemFlowType').forEach(radio => {
             radio.addEventListener('change', () => {
                 const fittingSelect = document.getElementById('systemFittingType');
                 if (fittingSelect && (fittingSelect.value === 'tee_sym' || fittingSelect.value === 'tee_asym')) {
-                    // Gen-tegn T-stykke inputs, hvis et T-stykke er valgt
                     fittingSelect.dispatchEvent(new Event('change'));
                 }
             });
+        });
+        document.getElementById('fileLoader').addEventListener('change', loadSystem);
+        window.addEventListener('click', function(event) {
+            const menu = document.getElementById('systemMenu');
+            const menuBtn = document.querySelector('.system-menu-btn');
+            if (menu && menuBtn && !menuBtn.contains(event.target) && !menu.contains(event.target)) {
+                menu.classList.add('hidden');
+            }
         });
     }, 0);
 
     return `
         <section>
-            <h2>Systemberegning</h2>
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid var(--border-color); margin-bottom: 25px;">
+                <h2 style="border: none; margin: 0; padding-bottom: 10px;">Systemberegning</h2>
+                <div class="system-menu-container">
+                    <button class="system-menu-btn" onclick="toggleSystemMenu()">&#8942;</button>
+                    <div id="systemMenu" class="system-menu-dropdown hidden">
+                        <a href="#" onclick="clearSystem(event)">Ny Beregning</a>
+                        <a href="#" onclick="saveSystem(event)">Gem System...</a>
+                        <a href="#" onclick="triggerFileLoad(event)">Hent System...</a>
+                        <a href="#" onclick="printDocumentation(event)">Print Dokumentation...</a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="input-group">
+                <label for="projectName">Projektnavn</label>
+                <input type="text" id="projectName" class="input-field" placeholder="f.eks. Ombygning af kontor, etage 3">
+            </div>
+
             <div class="input-field-group" style="align-items: end;">
                 <div class="input-group">
                     <label for="system_airflow">Start Luftmængde</label>
-                    <div class="input-unit-wrapper" data-unit="m³/h">
-                        <input type="text" id="system_airflow" class="input-field" required>
-                    </div>
+                    <div class="input-unit-wrapper" data-unit="m³/h"><input type="text" id="system_airflow" class="input-field" required></div>
                 </div>
                 <div class="input-group">
                     <label>Systemtype</label>
@@ -1697,6 +1826,7 @@ function getSystemFormHtml() {
                 </div>
                 <div id="systemComponentInputsContainer"></div>
             </form>
+            <input type="file" id="fileLoader" style="display: none;" accept=".json">
         </section>
     `;
 }
@@ -1823,6 +1953,177 @@ function showSystemComponentDetails(id) {
     
     modalBody.innerHTML = bodyHtml;
     detailsModal.style.display = 'flex';
+}
+
+function toggleSystemMenu() {
+    document.getElementById('systemMenu').classList.toggle('hidden');
+}
+
+function clearSystem(event) {
+    event.preventDefault();
+    if (confirm("Er du sikker på, at du vil slette hele systemet og starte forfra?")) {
+        systemComponents = [];
+        renderSystem();
+        toggleSystemMenu();
+    }
+}
+
+function saveSystem(event) {
+    event.preventDefault();
+    const defaultFilename = document.getElementById('projectName').value.trim().replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'mit_system';
+    const filename = prompt("Navngiv din systemfil:", `${defaultFilename}.json`);
+    
+    if (filename) {
+        const dataToSave = {
+            projectName: document.getElementById('projectName').value, // Gemmer projektnavn
+            startAirflow: document.getElementById('system_airflow').value,
+            systemFlowType: document.querySelector('input[name="systemFlowType"]:checked').value,
+            components: systemComponents
+        };
+        const jsonString = JSON.stringify(dataToSave, null, 2);
+        const blob = new Blob([jsonString], { type: 'application/json' });
+        
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+    }
+    toggleSystemMenu();
+}
+
+function triggerFileLoad(event) {
+    event.preventDefault();
+    document.getElementById('fileLoader').click();
+    toggleSystemMenu();
+}
+
+function loadSystem(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            const data = JSON.parse(e.target.result);
+            if (data && data.components && Array.isArray(data.components)) {
+                document.getElementById('projectName').value = data.projectName || ''; // Henter projektnavn
+                document.getElementById('system_airflow').value = data.startAirflow || '1000';
+                const flowTypeRadio = document.querySelector(`input[name="systemFlowType"][value="${data.systemFlowType || 'splitting'}"]`);
+                if(flowTypeRadio) flowTypeRadio.checked = true;
+
+                systemComponents = data.components;
+                renderSystem();
+            } else {
+                throw new Error("Invalid file format.");
+            }
+        } catch (error) {
+            alert("Fejl: Kunne ikke indlæse filen. Sikr dig, at det er en gyldig JSON-systemfil.");
+        }
+    };
+    reader.readAsText(file);
+    event.target.value = null; 
+}
+
+function printDocumentation(event) {
+    event.preventDefault();
+    toggleSystemMenu();
+
+    if (systemComponents.length === 0) {
+        alert("Systemet er tomt. Tilføj komponenter for at generere dokumentation.");
+        return;
+    }
+
+    // --- Byg tabelrækker ---
+    let totalPressureDrop = 0;
+    const tableRows = systemComponents.map(c => {
+        totalPressureDrop += c.pressureLoss;
+        const data = c.calculationDetails;
+        
+        let pressureDropPerMeterText = '-';
+        if (c.type === 'straightDuct' && data && data.pressureDrop) {
+            pressureDropPerMeterText = formatLocalFloat(data.pressureDrop, 2);
+        }
+        
+        let detailsText = '-';
+        if (data) {
+            if (data.lambda) {
+                detailsText = `λ: ${formatLocalFloat(data.lambda, 4)}`;
+            } else if (data.zeta) {
+                detailsText = `ζ: ${formatLocalFloat(data.zeta, 3)}`;
+            }
+        }
+
+        return `
+            <tr>
+                <td>${c.name}<br><small>${c.details || ''}</small></td>
+                <td>${formatLocalFloat(c.airflow, 0)}</td>
+                <td>${formatLocalFloat(c.newAirflowAfter, 0)}</td>
+                <td>${c.velocity ? formatLocalFloat(c.velocity, 2) : '-'}</td>
+                <td>${detailsText}</td>
+                <td>${pressureDropPerMeterText}</td>
+                <td>${formatLocalFloat(c.pressureLoss, 2)}</td>
+            </tr>
+        `;
+    }).join('');
+
+    // --- Saml den fulde HTML til print ---
+    const projectName = document.getElementById('projectName').value;
+    const startAirflow = document.getElementById('system_airflow').value;
+    const systemType = document.querySelector('input[name="systemFlowType"]:checked + label').textContent;
+    const temperature = document.getElementById('temperature').value;
+    const printDate = new Date().toLocaleString('da-DK');
+    
+    // NYT: Hent app-version fra sidfoden
+    const appVersionText = document.querySelector('.app-footer p').textContent.split(' --- ')[0];
+
+    const printHtml = `
+        <h1>Dokumentation for Systemberegning</h1>
+        ${projectName ? `<h2>Projekt: ${projectName}</h2>` : ''}
+        <p>Genereret: ${printDate}</p>
+        <h3>Grunddata</h3>
+        <p><strong>Start Luftmængde:</strong> ${startAirflow} m³/h</p>
+        <p><strong>Systemtype:</strong> ${systemType}</p>
+        <p><strong>Lufttemperatur:</strong> ${temperature} °C</p>
+        
+        <table class="print-table">
+            <thead>
+                <tr>
+                    <th>Komponent</th>
+                    <th>Luftmængde Ind [m³/h]</th>
+                    <th>Luftmængde Ud [m³/h]</th>
+                    <th>Hastighed [m/s]</th>
+                    <th>Detaljer (ζ/λ)</th>
+                    <th>Tryktab [Pa/m]</th>
+                    <th>Tryktab [Pa]</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${tableRows}
+            </tbody>
+            <tfoot>
+                <tr>
+                    <td colspan="6"><strong>Samlet Tryktab</strong></td>
+                    <td><strong>${formatLocalFloat(totalPressureDrop, 2)}</strong></td>
+                </tr>
+            </tfoot>
+        </table>
+        
+        <div style="margin-top: 30px; font-size: 8pt; color: #777;">
+            <p>Beregningen er foretaget med NIRAS Ventilationsberegner (${appVersionText})</p>
+        </div>
+    `;
+
+    // --- Opret, print, og fjern print-elementet ---
+    const printContainer = document.createElement('div');
+    printContainer.id = 'print-container';
+    printContainer.innerHTML = printHtml;
+    document.body.appendChild(printContainer);
+
+    window.print();
+
+    document.body.removeChild(printContainer);
 }
             
         document.addEventListener('DOMContentLoaded', initializeApp);
