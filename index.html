@@ -3,7 +3,7 @@
 <head>
         <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NIRAS Ventilationsberegner_v0.13.4_dev</title>
+    <title>NIRAS Ventilationsberegner_v0.13.4.1_dev</title>
     <link rel="icon" type="image/png" href="favicon.png">
     <link rel="manifest" href="manifest.json">
     <style>
@@ -454,7 +454,7 @@
             <div id="system" class="tab-content hidden"></div>
         </div>
         <footer class="app-footer">
-            <p>AppVersion 0.13.4_dev --- Spørgsmål kontakt CWA</p>
+            <p>AppVersion 0.13.4.1_dev --- Spørgsmål kontakt CWA</p>
         </footer>
     </div>
     
@@ -659,54 +659,62 @@
             }
         }
 
-        function showHelpModal() {
-            helpModal.innerHTML = `
-                <div class="modal-content">
-                    <div class="modal-header">
-                        <h3 id="modalTitleHelp">Formelgrundlag</h3>
-                        <span class="close-button">&times;</span>
-                    </div>
-                    <div id="modalBodyHelp" class="modal-body">
-                        <h4>Generelle Principper</h4>
-                        <p>Dette værktøj er designet til at assistere med kanalberegninger i henhold til anerkendte principper og normer som <strong>DS 447</strong>. Alle beregninger tager højde for standardiserede fysiske love for at sikre nøjagtighed.</p>
-                        <p><strong>Lufttemperatur:</strong> Luftens densitet (ρ) og kinematiske viskositet (ν) justeres dynamisk baseret på den indtastede temperatur. Dette sker via Ideal gasloven og Sutherlands formel for at afspejle virkelige forhold.</p>
-                        <p><strong>Godstykkelse:</strong> Der anvendes en standard kanalgodstykkelse på 0,5 mm. Alle indtastede dimensioner er ydre mål, og programmet omregner automatisk til indre mål for alle beregninger.</p>
-                        
-                        <hr>
+function showHelpModal() {
+    helpModal.innerHTML = `
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modalTitleHelp">Formelgrundlag</h3>
+                <span class="close-button">&times;</span>
+            </div>
+            <div id="modalBodyHelp" class="modal-body">
+                <h4>Generelle Principper</h4>
+                <p>Dette værktøj er designet til at assistere med kanalberegninger i henhold til anerkendte principper og normer som <strong>DS 447</strong>. Alle beregninger tager højde for standardiserede fysiske love for at sikre nøjagtighed.</p>
+                <p><strong>Lufttemperatur:</strong> Luftens densitet (ρ) og kinematiske viskositet (ν) justeres dynamisk baseret på den indtastede temperatur. Dette sker via Ideal gasloven og Sutherlands formel for at afspejle virkelige forhold.</p>
+                <p><strong>Godstykkelse:</strong> Der anvendes en standard kanalgodstykkelse på 0,5 mm. Alle indtastede dimensioner er ydre mål, og programmet omregner automatisk til indre mål for alle beregninger.</p>
+                
+                <hr>
 
-                        <h4>Kanaldimensionering (Lige Kanalstræk)</h4>
-                        <p>Tryktab i lige kanaler beregnes med <strong>Darcy-Weisbachs ligning</strong>:</p>
-                        <p><code>dp = (λ / Dₕ) * (ρ/2) * v²</code></p>
-                        <p>Her er de centrale elementer:</p>
-                        <ul>
-                            <li><strong>Friktionsfaktor (λ):</strong> Denne findes ved en iterativ løsning (50 gentagelser) af <strong>Colebrook-Whites ligning</strong>. Ligningen tager højde for både kanalens ruhed (k) og luftstrømmens turbulens, beskrevet ved Reynolds' tal (Re).</li>
-                            <li><strong>Hydraulisk Diameter (Dₕ):</strong> Dette er et nøglebegreb, der tillader at bruge samme formel for forskellige kanalformer.
-                                <ul>
-                                    <li>For <strong>cirkulære</strong> kanaler er Dₕ lig med den indre diameter.</li>
-                                    <li>For <strong>rektangulære</strong> kanaler beregnes Dₕ som: <code>Dₕ = 2*a*b / (a+b)</code>, hvor a og b er de indre sidemål.</li>
-                                </ul>
-                            </li>
-                        </ul>
-                        
-                        <hr>
+                <h4>Kanaldimensionering (Lige Kanalstræk)</h4>
+                <p>Tryktab i lige kanaler beregnes med <strong>Darcy-Weisbachs ligning</strong>:</p>
+                <p><code>dp = (λ / Dₕ) * (ρ/2) * v²</code></p>
+                <p>Her er de centrale elementer:</p>
+                <ul>
+                    <li><strong>Friktionsfaktor (λ):</strong> Denne findes ved en iterativ løsning (50 gentagelser) af <strong>Colebrook-Whites ligning</strong>. Ligningen tager højde for både kanalens ruhed (k) og luftstrømmens turbulens, beskrevet ved Reynolds' tal (Re).</li>
+                    <li><strong>Hydraulisk Diameter (Dₕ):</strong> For <strong>cirkulære</strong> kanaler er Dₕ lig med den indre diameter. For <strong>rektangulære</strong> kanaler beregnes Dₕ som: <code>Dₕ = 2*a*b / (a+b)</code>.</li>
+                </ul>
+                
+                <hr>
 
-                        <h4>Formstykker (Enkeltmodstande)</h4>
-                        <p>Tryktab i formstykker (også kaldet enkeltmodstande) beregnes ud fra en tryktabskoefficient (Zeta, ζ), som er unik for hvert formstykkes geometri:</p>
-                        <p><code>Δp = ζ * (ρ/2) * v²</code></p>
-                        <p><strong>Bøjninger (Cirkulære & Rektangulære), Udvidelser & Indsnævringer:</strong></p>
-                        <p>For disse komponenter findes ζ-værdien ikke som en fast konstant. I stedet findes den via <strong>lineær og bilinear interpolation</strong> i indbyggede datatabeller. Værktøjet slår op i tabellerne baseret på de indtastede geometriske forhold (f.eks. vinkel, radiusforhold, sideforhold, arealaforhold) for at finde en præcis, vægtet ζ-værdi, der passer nøjagtigt til det specifikke formstykke.</p>
-                        <p>For <strong>rektangulære bøjninger</strong> beregnes hastigheden (v) i formlen baseret på et ækvivalent areal, der er udledt af den <strong>hydrauliske diameter</strong>, for at sikre en konsistent beregningsmetode.</p>
+                <h4>Formstykker (Enkeltmodstande)</h4>
+                <p>Tryktab i formstykker beregnes ud fra en tryktabskoefficient (Zeta, ζ), som er unik for hvert formstykkes geometri:</p>
+                <p><code>Δp = ζ * (ρ/2) * v²</code></p>
+                <p><strong>Bøjninger, Udvidelser & Indsnævringer:</strong> For disse komponenter findes ζ-værdien via <strong>lineær og bilinear interpolation</strong> i indbyggede datatabeller baseret på de indtastede geometriske forhold (vinkel, radiusforhold, arealforhold etc.).</p>
+                <p><strong>T-stykker:</strong> ζ-værdien beregnes dynamisk for hver udgang (ligeud og afgrening) baseret på principperne om <strong>masse- og energibevarelse (Bernoullis ligning)</strong>. Formlerne tager højde for forholdet mellem luftmængder og arealer i de forskellige grene.</p>
 
-                        <p><strong>T-stykker:</strong></p>
-                        <p>Beregningen for T-stykker er mere kompleks, da luftstrømmen både deles og ændrer retning. Her beregnes ζ-værdien dynamisk for hver udgang (ligeud og afgrening) baseret på principperne om <strong>masse- og energibevarelse (Bernoullis ligning)</strong>. Formlerne tager højde for forholdet mellem luftmængder og arealer i de forskellige grene for at bestemme de turbulente tab og dermed en præcis ζ-værdi for hver luftvej.</p>
-                    </div>
-                </div>`;
-            
-            const modalCloseHelp = helpModal.querySelector('.close-button');
-            modalCloseHelp.onclick = () => { helpModal.style.display = "none"; };
-            window.onclick = (event) => { if (event.target == helpModal) { helpModal.style.display = "none"; } };
-            helpModal.style.display = 'flex';
-        }
+                <hr>
+
+                <h4>Systemberegning</h4>
+                <p>Denne fane bygger et komplet kanalsystem ved at summere tryktabet for en serie af komponenter. Beregningen foregår sekventielt med følgende principper:</p>
+                <ul>
+                    <li><strong>Kumulativt Tryktab:</strong> Det samlede tryktab er summen af tryktabet for hver enkelt komponent i listen.</li>
+                    <li><strong>Global Systemtype:</strong> Du definerer fra start, om hele systemet er <strong>Indblæsning</strong> (dele-flow) eller <strong>Udsugning</strong> (samle-flow). Denne indstilling låses, så snart den første komponent tilføjes, og bestemmer, hvordan T-stykker automatisk beregnes.</li>
+                    <li><strong>Videreført Luftmængde:</strong> Luftmængden for en ny komponent arves altid fra den foregående komponents udgående luftmængde. Dette er især vigtigt efter T-stykker, hvor luftmængden kan ændre sig for den videreførte systemgren.</li>
+                    <li><strong>Automatiske Overgange:</strong> Hvis du tilføjer en komponent med en indgangsdimension, der ikke matcher den forrige komponents udgangsdimension, indsætter programmet automatisk en "OBS"-linje med en beregnet indsnævring/udvidelse for at gøre opmærksom på det nødvendige tryktab.</li>
+                </ul>
+            </div>
+        </div>`;
+    
+    const modalCloseHelp = helpModal.querySelector('.close-button');
+    modalCloseHelp.onclick = () => { helpModal.style.display = "none"; };
+    
+    // Lukker også modal, hvis man klikker udenfor
+    window.onclick = (event) => { 
+        if (event.target == helpModal) { helpModal.style.display = "none"; }
+        if (event.target == detailsModal) { detailsModal.style.display = "none"; }
+    };
+
+    helpModal.style.display = 'flex';
+}
 
         // --- CALCULATION LOGIC & HANDLERS ---
         function populateDatalists() {
