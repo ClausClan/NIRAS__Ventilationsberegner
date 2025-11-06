@@ -1705,8 +1705,8 @@ function handleAddComponent(event) {
         alert('Udfyld venligst en gyldig Start Luftmængde.');
         return;
     }
-
-    // RETTELSE: Denne linje definerer 'lastComponent', som manglede i din version
+    
+    // DEFINERER 'lastComponent' KORREKT HER I TOPPEN
     const lastComponent = systemComponents.length > 0 ? systemComponents[systemComponents.length - 1] : null;
     
     const airflow = lastComponent ? lastComponent.newAirflowAfter : startAirflow;
@@ -1806,6 +1806,7 @@ function handleAddComponent(event) {
         let newComponent = { id: Date.now(), airflow: airflow };
         let inletDimension;
         let isEstimated = false; // Denne bruges kun til blandede overgange
+        let targetIndex = -1; // Til korrektions-indsættelse
 
         if (componentType === 'straightDuct') {
             const length = parseLocalFloat(document.getElementById('ductLength').value);
@@ -1836,7 +1837,6 @@ function handleAddComponent(event) {
             const pressureLoss = parseLocalFloat(document.getElementById('manualLossValue').value);
             let outletDimension = lastComponent ? lastComponent.outletDimension : null;
             
-            // NYT: Håndter korrektions-indsættelse
             if (correctionTargetId) {
                 targetIndex = systemComponents.findIndex(c => c.id === correctionTargetId);
                 if (targetIndex !== -1) {
@@ -1850,7 +1850,7 @@ function handleAddComponent(event) {
             }
             
             newComponent = { ...newComponent, type: 'manualLoss', name, details: '', velocity: null, pressureLoss: pressureLoss, calculationDetails: null, newAirflowAfter: airflow, outletDimension: outletDimension };
-            // Håndter korrektions-indsættelse
+            
             if (correctionTargetId && targetIndex !== -1) {
                 systemComponents.splice(targetIndex + 1, 0, newComponent);
                 correctionTargetId = null; // Nulstil
