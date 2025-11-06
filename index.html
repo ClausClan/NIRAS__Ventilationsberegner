@@ -3,7 +3,7 @@
 <head>
         <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NIRAS Ventilationsberegner_v0.13.4.1_dev</title>
+    <title>NIRAS Ventilationsberegner_v0.13.5.2_dev</title>
     <link rel="icon" type="image/png" href="favicon.png">
     <link rel="manifest" href="manifest.json">
     <style>
@@ -454,7 +454,7 @@
             <div id="system" class="tab-content hidden"></div>
         </div>
         <footer class="app-footer">
-            <p>AppVersion 0.13.5.1_dev --- Spørgsmål kontakt CWA</p>
+            <p>AppVersion 0.13.5.2_dev --- Spørgsmål kontakt CWA</p>
         </footer>
     </div>
     
@@ -544,7 +544,11 @@
                                 <optgroup label="Dimensionsændringer">
                                     <option value="expansion">Udvidelse</option>
                                     <option value="contraction">Indsnævring</option>
-                                </optgroup>
+                                	<option value="expansion_rect">Udvidelse, Rektangulær</option>
+                           			<option value="contraction_rect">Indsnævring, Rektangulær</option>
+                            		<option value="transition_round_rect">Overgang, Rund til Firkant</option>
+                            		<option value="transition_rect_round">Overgang, Firkant til Rund</option>
+                       			</optgroup>
                                 <optgroup label="T-stykker (Cirkulær)">
                                     <option value="tee_sym">T-stykke, Symmetrisk</option>
                                     <option value="tee_asym">T-stykke, Asymmetrisk</option>
@@ -848,6 +852,22 @@ function renderFittingInputs() {
                     </div></div>
                     <div id="geo_input_container"></div>`;
                 break;
+				case 'transition_round_rect':
+            	case 'transition_rect_round':
+                inputsHtml = commonAirflowInput + `
+                    <div class="input-field-group">
+                        <div class="input-group"><label for="d">Diameter (d)</label><input type="text" id="d" class="input-field" list="diameter-list"></div>
+                    </div>
+                    <div class="input-field-group">
+                        <div class="input-group"><label for="h">Højde (H)</label><input type="text" id="h" class="input-field" list="rect-list"></div>
+                        <div class="input-group"><label for="w">Bredde (B)</label><input type="text" id="w" class="input-field" list="rect-list"></div>
+                    </div>
+                    <div class="input-group"><label>Definér geometri via:</label><div class="radio-group">
+                        <input type="radio" id="geo_angle" name="geo_type" value="angle" checked><label for="geo_angle">Vinkel (α)</label>
+                        <input type="radio" id="geo_length" name="geo_type" value="length"><label for="geo_length">Længde (L)</label>
+                    </div></div>
+                    <div id="geo_input_container"></div>`;
+                break;
         }
         if (illustrationSvg) illustrationContainer.innerHTML = `<div class="illustration-container">${illustrationSvg}</div>`;
         fittingInputsContainer.innerHTML = inputsHtml;
@@ -1031,6 +1051,41 @@ function handleFittingCalculation(event) {
                     A = isExpansion ? A1 : A2;
                     v = Q/A;
                     name = `${isExpansion ? 'Udvidelse' : 'Indsnævring'} Rekt. ${h1}x${w1} -> ${h2}x${w2}`;
+                    break;
+                	}
+				// NYE CASES FOR BLANDEDE OVERGANGE
+                case 'transition_round_rect':
+                case 'transition_rect_round': {
+                    const d = parseLocalFloat(document.getElementById('d').value);
+                    const h = parseLocalFloat(document.getElementById('h').value);
+                    const w = parseLocalFloat(document.getElementById('w').value);
+                    
+                    const A_round = Math.PI * (getInternalDim(d)/2000)**2;
+                    const A_rect = (getInternalDim(h)/1000) * (getInternalDim(w)/1000);
+                    
+                    const A1 = (type === 'transition_round_rect') ? A_round : A_rect;
+                    const A2 = (type === 'transition_round_rect') ? A_rect : A_round;
+                    const isExpansion = A2 > A1;
+
+                    let angle;
+                    const geoType = document.querySelector('input[name="geo_type"]:checked').value;
+                    if (geoType === 'angle') {
+                        angle = parseLocalFloat(document.getElementById('angle').value);
+                    } else {
+                        const length = parseLocalFloat(document.getElementById('length').value);
+                        // Simpel vinkel-beregning baseret på ækvivalente diametre
+                        const d_eq_rect = (2 * (getInternalDim(h)/1000) * (getInternalDim(w)/1000)) / ((getInternalDim(h)/1000) + (getInternalDim(w)/1000));
+                        const d_eq_circ = getInternalDim(d)/1000;
+                        const radiusDiff = Math.abs(d_eq_circ - d_eq_rect) / 2;
+                        angle = 2 * (Math.atan(radiusDiff / (length/1000)) * (180 / Math.PI));
+                    }
+
+                    const area_ratio = A2/A1;
+                    const zeta_table = isExpansion ? EXPANSION_ZETA : CONTRACTION_ZETA;
+                    zeta = interpolateValue(angle, area_ratio, zeta_table);
+                    A = isExpansion ? A1 : A2; // Reference area
+                    v = Q/A;
+                    name = (type === 'transition_round_rect') ? `Overgang Ø${d} -> ${h}x${w}` : `Overgang ${h}x${w} -> Ø${d}`;
                     break;
                 }
             }
@@ -1383,8 +1438,24 @@ function handleComponentTypeChange() {
                         </div></div>
                         <div id="sys_geo_input_container"></div>`;
                     break;
+				case 'transition_round_rect':
+                case 'transition_rect_round':
+                    inputsHtml = `
+                        <div class="input-field-group">
+                            <div class="input-group"><label for="sys_d">Diameter (d)</label><select id="sys_d" class="input-field">${roundOptions}</select></div>
+                        </div>
+                        <div class="input-field-group">
+                            <div class="input-group"><label for="sys_h">Højde (H)</label><select id="sys_h" class="input-field">${rectOptions}</select></div>
+                            <div class="input-group"><label for="sys_w">Bredde (B)</label><select id="sys_w" class="input-field">${rectOptions}</select></div>
+                        </div>
+                        <div class="input-group"><label>Definér geometri via:</label><div class="radio-group">
+                            <input type="radio" id="sys_geo_angle" name="sys_geo_type" value="angle" checked><label for="sys_geo_angle">Vinkel (α)</label>
+                            <input type="radio" id="sys_geo_length" name="sys_geo_type" value="length"><label for="sys_geo_length">Længde (L)</label>
+                        </div></div>
+                        <div id="sys_geo_input_container"></div>`;
+                    break;
 					
-  	              case 'tee_sym': case 'tee_asym': {
+  	             case 'tee_sym': case 'tee_asym': {
                     const isSym = fittingType === 'tee_sym';
                     const diameterInputs = isSym ? `<div class="input-group"><label>Diameter (alle grene)</label><select id="sys_tee_d_in" class="input-field">${roundOptions}</select></div>`
                         : `<div class="input-field-group"><div class="input-group"><label for="sys_tee_d_in">Ø Fælles</label><select id="sys_tee_d_in" class="input-field">${roundOptions}</select></div><div class="input-group"><label for="sys_tee_d_straight">Ø Ligeud</label><select id="sys_tee_d_straight" class="input-field">${roundOptions}</select></div><div class="input-group"><label for="sys_tee_d_branch">Ø Afgrening</label><select id="sys_tee_d_branch" class="input-field">${roundOptions}</select></div></div>`;
@@ -1780,6 +1851,44 @@ function handleAddComponent(event) {
                     zeta = interpolateValue(angle_con, A2_con/A1_con, CONTRACTION_ZETA);
                     A = A2_con; v = Q/A2_con;
                     name = `Indsnævring`; details = `Ø${d1} -> Ø${d2}`;
+                    break;
+                }
+				case 'transition_round_rect':
+                case 'transition_rect_round': {
+                    const d = parseLocalFloat(document.getElementById('sys_d').value);
+                    const h = parseLocalFloat(document.getElementById('sys_h').value);
+                    const w = parseLocalFloat(document.getElementById('sys_w').value);
+
+                    const A_round = Math.PI * (getInternalDim(d)/2000)**2;
+                    const A_rect = (getInternalDim(h)/1000) * (getInternalDim(w)/1000);
+
+                    const A1 = (fittingType === 'transition_round_rect') ? A_round : A_rect;
+                    const A2 = (fittingType === 'transition_round_rect') ? A_rect : A_round;
+                    const isExpansion = A2 > A1;
+
+                    // Definerer inlet/outlet for auto-transition check
+                    inletDimension = (fittingType === 'transition_round_rect') ? { shape: 'round', d: d } : { shape: 'rect', h: h, w: w };
+                    outletDimension = (fittingType === 'transition_round_rect') ? { shape: 'rect', h: h, w: w } : { shape: 'round', d: d };
+                    
+                    let angle;
+                    const geoType = document.querySelector('input[name="sys_geo_type"]:checked').value;
+                    if (geoType === 'angle') {
+                        angle = parseLocalFloat(document.getElementById('sys_angle_dim').value);
+                    } else {
+                        const length = parseLocalFloat(document.getElementById('sys_length_dim').value);
+                        const d_eq_rect = (2 * (getInternalDim(h)/1000) * (getInternalDim(w)/1000)) / ((getInternalDim(h)/1000) + (getInternalDim(w)/1000));
+                        const d_eq_circ = getInternalDim(d)/1000;
+                        const radiusDiff = Math.abs(d_eq_circ - d_eq_rect) / 2;
+                        angle = 2 * (Math.atan(radiusDiff / (length/1000)) * (180 / Math.PI));
+                    }
+
+                    const area_ratio = A2/A1;
+                    const zeta_table = isExpansion ? EXPANSION_ZETA : CONTRACTION_ZETA;
+                    zeta = interpolateValue(angle, area_ratio, zeta_table);
+                    A = isExpansion ? A1 : A2;
+                    v = Q/A;
+                    name = (fittingType === 'transition_round_rect') ? `Overgang Ø${d} -> ${h}x${w}` : `Overgang ${h}x${w} -> Ø${d}`;
+                    details = `(${isExpansion ? 'Udvidelse' : 'Indsnævring'})`;
                     break;
                 }
                 case 'tee_sym': case 'tee_asym': {
