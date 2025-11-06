@@ -560,11 +560,20 @@
                 </section>`;
         }
 function getFittingsFormHtml() {
+    // Sætter listeners op, efter HTML'en er indlæst i DOM'en
+    setTimeout(() => {
+        // Lyt efter ændringer på Ind/Ud-knapperne
+        document.getElementsByName('fitFlowType').forEach(radio => {
+            radio.addEventListener('change', updateFittingTypeOptions);
+        });
+        // Udfyld dropdown-menuen korrekt første gang
+        updateFittingTypeOptions(); 
+    }, 0);
+
     return `
         <section>
             <h2>Tryktab for Formstykker</h2>
             <form id="fittingsForm">
-                
                 <div class="input-group">
                     <label>Systemtype</label>
                     <div class="radio-group"> 
@@ -572,29 +581,10 @@ function getFittingsFormHtml() {
                         <input type="radio" id="fitTypeExhaust" name="fitFlowType" value="merging"><label for="fitTypeExhaust">Udsugning</label> 
                     </div>
                 </div>
-
                 <div class="input-group">
                     <label for="fittingType">Vælg type formstykke</label>
                     <select id="fittingType" class="input-field">
-                        <option value="">-- Vælg type --</option>
-                        <optgroup label="Bøjninger">
-                            <option value="bend_circ">Bøjning, Cirkulær</option>
-                            <option value="bend_rect">Bøjning, Rektangulær</option>
-                        </optgroup>
-                        <optgroup label="Dimensionsændringer">
-                            <option value="expansion">Udvidelse, Cirkulær</option>
-                            <option value="contraction">Indsnævring, Cirkulær</option>
-                            <option value="expansion_rect">Udvidelse, Rektangulær</option>
-                            <option value="contraction_rect">Indsnævring, Rektangulær</option>
-                            <option value="transition_round_rect">Overgang, Rund til Firkant</option>
-                            <option value="transition_rect_round">Overgang, Firkant til Rund</option>
-                        </optgroup>
-                        <optgroup label="T-stykker (Cirkulær)">
-                            <option value="tee_sym">T-stykke, Symmetrisk</option>
-                            <option value="tee_asym">T-stykke, Asymmetrisk</option>
-                            <option value="tee_bullhead">T-stykke (Dobbelt Afgrening)</option>
-                        </optgroup>
-                    </select>
+                        </select>
                 </div>
                 <div id="fittingIllustrationContainer"></div>
                 <div id="fittingInputsContainer"></div>
@@ -952,6 +942,7 @@ function handleFittingCalculation(event) {
         if (isNaN(temp)) throw new Error("Ugyldig temperatur.");
         const { RHO, NU } = getAirProperties(temp);
         const type = fittingTypeSelect.value;
+		const globalFlowType = document.querySelector('input[name="fitFlowType"]:checked').value;
 
         if (type.startsWith('tee')) {
             const isBullhead = type === 'tee_bullhead';
@@ -1077,7 +1068,7 @@ function handleFittingCalculation(event) {
                     name = `${isExpansion ? 'Udvidelse' : 'Indsnævring'} Rekt. ${h1}x${w1} -> ${h2}x${w2}`;
                     break;
                 }
-				case 'transition_round_rect':
+case 'transition_round_rect':
                 case 'transition_rect_round': {
                     const d = parseLocalFloat(document.getElementById('d').value);
                     const h = parseLocalFloat(document.getElementById('h').value);
@@ -1087,8 +1078,7 @@ function handleFittingCalculation(event) {
                     const A1 = (type === 'transition_round_rect') ? A_round : A_rect;
                     const A2 = (type === 'transition_round_rect') ? A_rect : A_round;
                     const isExpansion = A2 > A1;
-                    const area_ratio = A1 / A2; // A_ind / A_ud
-
+                    const area_ratio = A1 / A2;
                     let angle;
                     const geoType = document.querySelector('input[name="geo_type"]:checked').value;
                     if (geoType === 'angle') {
@@ -1103,15 +1093,12 @@ function handleFittingCalculation(event) {
 
                     let zeta_table;
                     if (type === 'transition_rect_round' && globalFlowType === 'splitting') {
-                        // Firkant -> Rund (Indblæsning) - VI HAR DATA
                         zeta_table = RECT_TO_ROUND_SUPPLY_ZETA;
                     } else if (type === 'transition_round_rect' && globalFlowType === 'merging') {
-                        // Rund -> Firkant (Udsugning) - VI HAR DATA
                         zeta_table = ROUND_TO_RECT_EXHAUST_ZETA;
                     } else {
-                        // Alle andre kombinationer - INGEN FALLBACK
-                        const flowText = globalFlowType === 'splitting' ? 'Indblæsning' : 'Udsugning';
-                        throw new Error(`Data mangler for denne specifikke kombination (${type}, ${flowText}). Beregning afbrudt.`);
+                        // Denne fejl vil nu ikke kunne opstå pga. den dynamiske UI
+                        throw new Error(`Data mangler for denne specifikke kombination (${type}, ${globalFlowType}).`);
                     }
                     
                     zeta = interpolateValue(angle, area_ratio, zeta_table);
@@ -2403,6 +2390,54 @@ function loadSystem(event) {
     event.target.value = null; 
 }
 
+// NY HJÆLPEFUNKTION til at opdatere "Formstykker"-dropdown
+function updateFittingTypeOptions() {
+    // Tjekker om radio-knappen 'fitFlowType' og 'fittingType' select-boksen findes
+    const flowTypeRadio = document.querySelector('input[name="fitFlowType"]:checked');
+    const fittingSelect = document.getElementById('fittingType');
+    if (!flowTypeRadio || !fittingSelect) return;
+
+    const flowType = flowTypeRadio.value;
+    const currentSelection = fittingSelect.value; // Gem hvad der er valgt
+    
+    let optionsHtml = `
+        <option value="">-- Vælg type --</option>
+        <optgroup label="Bøjninger">
+            <option value="bend_circ">Bøjning, Cirkulær</option>
+            <option value="bend_rect">Bøjning, Rektangulær</option>
+        </optgroup>
+        <optgroup label="Dimensionsændringer">
+            <option value="expansion">Udvidelse, Cirkulær</option>
+            <option value="contraction">Indsnævring, Cirkulær</option>
+            <option value="expansion_rect">Udvidelse, Rektangulær</option>
+            <option value="contraction_rect">Indsnævring, Rektangulær</option>
+    `;
+
+    // Dynamisk tilføjelse af overgange baseret på flow-type
+    if (flowType === 'splitting') { // Indblæsning
+        optionsHtml += `<option value="transition_rect_round">Overgang, Firkant til Rund</option>`;
+    } else { // Udsugning (merging)
+        optionsHtml += `<option value="transition_round_rect">Overgang, Rund til Firkant</option>`;
+    }
+    
+    optionsHtml += `
+        </optgroup>
+        <optgroup label="T-stykker (Cirkulær)">
+            <option value="tee_sym">T-stykke, Symmetrisk</option>
+            <option value="tee_asym">T-stykke, Asymmetrisk</option>
+            <option value="tee_bullhead">T-stykke (Dobbelt Afgrening)</option>
+        </optgroup>
+    `;
+    
+    fittingSelect.innerHTML = optionsHtml;
+    fittingSelect.value = currentSelection; // Prøv at genvælge det, der var valgt
+    
+    // Nulstil sub-inputs, hvis valget ikke længere er gyldigt
+    if (fittingSelect.value !== currentSelection) {
+        renderFittingInputs();
+    }
+}
+		
 function printDocumentation(event) {
     event.preventDefault();
     toggleSystemMenu();
