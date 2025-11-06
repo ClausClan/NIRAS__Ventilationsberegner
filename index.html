@@ -518,6 +518,7 @@
         let modalTitle, modalBody;
         let systemComponents = []; // To store all components in the system
         let systemAddComponentForm, systemComponentTypeSelect, systemComponentInputsContainer, systemComponentsContainer, totalPressureDropContainer;
+		let correctionTargetId = null; // Husker hvilken komponent, vi vil korrigere
 
 
         // --- HELPER FUNCTIONS ---
@@ -1703,15 +1704,29 @@ function handleAddComponent(event) {
         alert('Udfyld venligst en gyldig Start Luftmængde.');
         return;
     }
-    const lastComponent = systemComponents.length > 0 ? systemComponents[systemComponents.length - 1] : null;
-    const airflow = lastComponent ? lastComponent.newAirflowAfter : startAirflow;
 
-    const temp = parseLocalFloat(document.getElementById('temperature').value);
-    if (isNaN(temp)) { alert('Udfyld venligligst en gyldig global Temperatur.'); return; }
+	// Tjek om vi er i korrektions-tilstand, og find den korrekte luftmængde
+    let airflow;
+    let targetIndex = -1;
+    if (correctionTargetId) {
+        targetIndex = systemComponents.findIndex(c => c.id === correctionTargetId);
+        if (targetIndex !== -1) {
+            // Luftmængden for korrektionen er den samme som den komponent, vi korrigerer
+            airflow = systemComponents[targetIndex].airflow; 
+        }
+    }
+
+	// Hvis vi ikke er i korrektions-tilstand, gør som vi plejer
+    if (!airflow) {
+        const lastComponent = systemComponents.length > 0 ? systemComponents[systemComponents.length - 1] : null;
+        airflow = lastComponent ? lastComponent.newAirflowAfter : startAirflow;
+    }
+	
+	const temp = parseLocalFloat(document.getElementById('temperature').value);
+    if (isNaN(temp)) { alert('Udfyld venligst en gyldig global Temperatur.'); return; }
 
     const { RHO, NU } = getAirProperties(temp);
     const Q = airflow / 3600;
-
     const componentType = systemComponentTypeSelect.value;
     const globalFlowType = document.querySelector('input[name="systemFlowType"]:checked').value;
     
@@ -1827,11 +1842,20 @@ function handleAddComponent(event) {
         } else if (componentType === 'manualLoss') {
             const name = document.getElementById('manualLossName').value || 'Manuelt Tab';
             const pressureLoss = parseLocalFloat(document.getElementById('manualLossValue').value);
-            const outletDimension = lastComponent ? lastComponent.outletDimension : null;
-            inletDimension = outletDimension;
-            addTransitionIfNeeded(inletDimension);
+            // Manuelt tab har ingen dimension, så den "arver" fra forrige komponent
+            let outletDimension = lastComponent ? lastComponent.outletDimension : null;
+            // Hvis vi korrigerer, arver vi dimensionen fra den komponent, vi korrigerer
+            if (targetIndex !== -1) {
+                 outletDimension = systemComponents[targetIndex].outletDimension;
+            }
+            inletDimension = outletDimension; 
+            
+            // Vi kalder ikke addTransitionIfNeeded for en korrektion
+            if(correctionTargetId === null) {
+                addTransitionIfNeeded(inletDimension);
+            }
+            
             newComponent = { ...newComponent, type: 'manualLoss', name, details: '', velocity: null, pressureLoss: pressureLoss, calculationDetails: null, newAirflowAfter: airflow, outletDimension: outletDimension };
-            systemComponents.push(newComponent);
         
         } else if (componentType === 'fitting') {
             const fittingType = document.getElementById('systemFittingType').value;
@@ -2047,6 +2071,15 @@ function handleAddComponent(event) {
             
             addTransitionIfNeeded(inletDimension);
             newComponent = { ...newComponent, type: fittingType, name, details, velocity, pressureLoss, calculationDetails, newAirflowAfter: newAirflowAfter, outletDimension: outletDimension, isEstimated: isEstimated };
+            systemComponents.push(newComponent);
+        }
+        
+		if (correctionTargetId && componentType === 'manualLoss' && targetIndex !== -1) {
+            // Indsæt korrektionen lige efter den komponent, vi vil rette
+            systemComponents.splice(targetIndex + 1, 0, newComponent);
+            correctionTargetId = null; // Nulstil
+        } else {
+            // Normal adfærd: Tilføj til sidst
             systemComponents.push(newComponent);
         }
         
@@ -2334,6 +2367,7 @@ function clearSystem(event) {
     event.preventDefault();
     if (confirm("Er du sikker på, at du vil slette hele systemet og starte forfra?")) {
         systemComponents = [];
+		correctionTargetId = null;
         renderSystem();
         toggleSystemMenu();
     }
@@ -2385,6 +2419,7 @@ function loadSystem(event) {
                 if(flowTypeRadio) flowTypeRadio.checked = true;
 
                 systemComponents = data.components;
+				correctionTargetId = null;
                 renderSystem();
             } else {
                 throw new Error("Invalid file format.");
@@ -2449,27 +2484,27 @@ function requestCorrection(componentId) {
     const component = systemComponents.find(c => c.id === componentId);
     if (!component) return;
 
+    // NYT: Gem ID'et på den komponent, vi vil korrigere
+    correctionTargetId = componentId; 
+
     // Rul ned til "Tilføj Komponent"-sektionen
     const addComponentSection = document.getElementById('systemAddComponentForm');
     addComponentSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
     // Vælg "Manuelt Tab" i dropdown
     systemComponentTypeSelect.value = 'manualLoss';
-    // Udløs 'change' eventet for at få UI'en til at opdatere sig
     systemComponentTypeSelect.dispatchEvent(new Event('change'));
 
-    // Forudfyld felterne (med en lille forsinkelse, så UI'en kan nå at tegne felterne)
     setTimeout(() => {
         const nameInput = document.getElementById('manualLossName');
         const valueInput = document.getElementById('manualLossValue');
-        
         if (nameInput) {
             nameInput.value = `Korrektion for: ${component.name}`;
         }
         if (valueInput) {
-            valueInput.focus(); // Sæt markøren i Pa-feltet, klar til indtastning
+            valueInput.focus();
         }
-    }, 100); // 100ms bør være nok
+    }, 100);
 }
 		
 function printDocumentation(event) {
