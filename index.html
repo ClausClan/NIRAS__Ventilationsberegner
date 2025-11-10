@@ -413,6 +413,49 @@
     display: none;
 }
 
+/* --- MOBIL-RETTELSER --- */
+@media (max-width: 550px) {
+
+    /* Fix 1: Gør alt indhold lidt mere kompakt */
+    body {
+        padding: 10px 5px; /* Mindre padding på hele siden */
+    }
+    .tab-content {
+        padding: 20px 15px; /* Mindre padding i fanebladene */
+    }
+    h2 {
+        font-size: 1.25rem; /* Lidt mindre overskrifter */
+    }
+    .input-field, select, .button {
+        padding: 11px; /* Lidt lavere knapper/felter */
+        font-size: 0.95rem;
+    }
+    label {
+        font-size: 0.85rem;
+    }
+
+    /* Fix 2: Headeren (skjul "Future Vibe" tekst) */
+    .theme-switch-label {
+        display: none;
+    }
+    .header {
+        padding: 15px 20px 0; /* Lidt tættere header */
+    }
+
+    /* Fix 3: Faneblade (mindre skrift så de kan være der) */
+    .tab-link {
+        font-size: 0.8rem; /* Markant mindre skrift */
+        padding: 12px 5px; /* Mindre side-padding */
+    }
+
+    /* Fix 4: Radio-knapper (skift til 1-kolonne layout) */
+    /* Dette løser problemet med "Udsugning" der ryger udenfor */
+    .radio-group {
+        grid-template-columns: 1fr;
+    }
+
+}
+
     </style>
 </head>
 <body>
