@@ -413,47 +413,44 @@
     display: none;
 }
 
-/* --- MOBIL-RETTELSER --- */
+/* ---  MOBIL-CSS Justeringer --- */
 @media (max-width: 550px) {
 
-    /* Fix 1: Gør alt indhold lidt mere kompakt */
-    body {
-        padding: 10px 5px; /* Mindre padding på hele siden */
+    /* Gør alt indhold lidt mere kompakt */
+    body { padding: 10px 5px; }
+    .tab-content { padding: 20px 15px; }
+    h2 { font-size: 1.25rem; }
+    .input-field, select, .button { padding: 11px; font-size: 0.95rem; }
+    label { font-size: 0.85rem; }
+    .header { padding: 15px 20px 0; }
+    .theme-switch-label { display: none; }
+
+    /* Fix for faneblade: Gør dem mindre og lad dem flyde */
+    .tab-nav {
+        flex-wrap: wrap; /* Giver lov til at bryde til næste linje */
     }
-    .tab-content {
-        padding: 20px 15px; /* Mindre padding i fanebladene */
+    .tab-link {
+        font-size: 0.8rem;
+        padding: 12px 5px;
+        flex-basis: 33%; /* Prøver at holde 3 pr. linje */
+        flex-grow: 1;
     }
-    h2 {
-        font-size: 1.25rem; /* Lidt mindre overskrifter */
+
+    /* Fix for radio-knapper: 
+       Gør dem til 2 kolonner, men lad dem tilpasse sig indholdet */
+    .radio-group {
+        grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
     }
-    .input-field, select, .button {
-        padding: 11px; /* Lidt lavere knapper/felter */
-        font-size: 0.95rem;
-    }
-    label {
+    .radio-group label {
+        padding: 10px 5px;
         font-size: 0.85rem;
     }
 
-    /* Fix 2: Headeren (skjul "Future Vibe" tekst) */
-    .theme-switch-label {
-        display: none;
+    /* Fix for input-felter, der er for brede */
+    .input-field-group {
+        /* Denne får f.eks. Vinkel/Radius-felterne til at stable sig pænt */
+        grid-template-columns: 1fr 1fr;
     }
-    .header {
-        padding: 15px 20px 0; /* Lidt tættere header */
-    }
-
-    /* Fix 3: Faneblade (mindre skrift så de kan være der) */
-    .tab-link {
-        font-size: 0.8rem; /* Markant mindre skrift */
-        padding: 12px 5px; /* Mindre side-padding */
-    }
-
-    /* Fix 4: Radio-knapper (skift til 1-kolonne layout) */
-    /* Dette løser problemet med "Udsugning" der ryger udenfor */
-    .radio-group {
-        grid-template-columns: 1fr;
-    }
-
 }
 
     </style>
