@@ -2235,20 +2235,20 @@ function getSystemFormHtml() {
                 <label for="projectName">Projektnavn</label>
                 <input type="text" id="projectName" class="input-field" placeholder="f.eks. Ombygning af kontor, etage 3">
             </div>
-
-            <div class="input-field-group">
-                <div class="input-group">
+			
+            <div class="input-group">
                     <label>Systemtype</label>
                     <div id="globalSystemTypeGroup" class="radio-group"> 
                         <input type="radio" id="sysTypeSupply" name="systemFlowType" value="splitting" checked><label for="sysTypeSupply">Indblæsning</label> 
                         <input type="radio" id="sysTypeExhaust" name="systemFlowType" value="merging"><label for="sysTypeExhaust">Udsugning</label> 
                     </div>
-                </div>
-				<div class="input-group">
+            </div>
+			
+			<div class="input-group">
                     <label for="system_airflow">Start Luftmængde</label>
                     <div class="input-unit-wrapper" data-unit="m³/h"><input type="text" id="system_airflow" class="input-field" required></div>
-                </div>
             </div>
+			
             <div id="systemComponentsContainer"></div>
             <div id="totalPressureDropContainer" class="results-container"></div>
             <h3 style="margin-top: 30px; border-top: 1px solid var(--border-color); padding-top: 30px;">Tilføj Komponent</h3>
