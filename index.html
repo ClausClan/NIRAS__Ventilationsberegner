@@ -484,9 +484,9 @@
             </div>
 
             <nav class="tab-nav">
-                <button class="tab-link active" data-tab="dimensioning">Kanaldimensionering</button>
+                <button class="tab-link active" data-tab="dimensioning">Kanaler</button>
                 <button class="tab-link" data-tab="fittings">Formstykker</button>
-                <button class="tab-link" data-tab="system">Systemberegning</button>
+                <button class="tab-link" data-tab="system">System</button>
             </nav>
 
             <div id="dimensioning" class="tab-content"></div>
@@ -580,7 +580,7 @@
                     <h2>Kanaldimensionering</h2>
                     <form id="ventilationForm">
                         <div class="input-group"> <label for="dim_airflow">Luftmængde</label> <div class="input-unit-wrapper" data-unit="m³/h"><input type="text" id="dim_airflow" class="input-field" required></div> </div>
-                        <div class="control-group"> <label>Beregningstype</label> <div class="radio-group"> <input type="radio" id="modeCalculate" name="calculationMode" value="calculate" checked><label for="modeCalculate">Beregn Dimension</label> <input type="radio" id="modeAnalyze" name="calculationMode" value="analyze"><label for="modeAnalyze">Analyser Eksisterende</label> </div> </div>
+                        <div class="control-group"> <label>Beregningstype</label> <div class="radio-group"> <input type="radio" id="modeCalculate" name="calculationMode" value="calculate" checked><label for="modeCalculate">Find Dimension</label> <input type="radio" id="modeAnalyze" name="calculationMode" value="analyze"><label for="modeAnalyze">Kendt Dimension</label> </div> </div>
                         <div class="control-group"> <label>Kanalform</label> <div class="radio-group"> <input type="radio" id="ductRound" name="ductShape" value="round" checked><label for="ductRound">Cirkulær</label> <input type="radio" id="ductRectangular" name="ductShape" value="rectangular"><label for="ductRectangular">Rektangulær</label> </div> </div>
                         <div id="calculateInputs">
                             <div class="input-group"><label for="constraintType">Grænse</label><select id="constraintType" class="input-field"><option value="velocity">Hastighed (m/s)</option><option value="pressure">Tryktab (Pa/m)</option></select></div>
@@ -2236,17 +2236,17 @@ function getSystemFormHtml() {
                 <input type="text" id="projectName" class="input-field" placeholder="f.eks. Ombygning af kontor, etage 3">
             </div>
 
-            <div class="input-field-group" style="align-items: end;">
-                <div class="input-group">
-                    <label for="system_airflow">Start Luftmængde</label>
-                    <div class="input-unit-wrapper" data-unit="m³/h"><input type="text" id="system_airflow" class="input-field" required></div>
-                </div>
+            <div class="input-field-group">
                 <div class="input-group">
                     <label>Systemtype</label>
                     <div id="globalSystemTypeGroup" class="radio-group"> 
                         <input type="radio" id="sysTypeSupply" name="systemFlowType" value="splitting" checked><label for="sysTypeSupply">Indblæsning</label> 
                         <input type="radio" id="sysTypeExhaust" name="systemFlowType" value="merging"><label for="sysTypeExhaust">Udsugning</label> 
                     </div>
+                </div>
+				<div class="input-group">
+                    <label for="system_airflow">Start Luftmængde</label>
+                    <div class="input-unit-wrapper" data-unit="m³/h"><input type="text" id="system_airflow" class="input-field" required></div>
                 </div>
             </div>
             <div id="systemComponentsContainer"></div>
