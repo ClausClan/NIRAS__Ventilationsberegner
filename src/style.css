@@ -1,0 +1,949 @@
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap');
+
+        :root {
+            /* NIRAS Future Vibe - Neon Inspired */
+            --primary-neon-blue: #00E4FF;
+            --secondary-neon-purple: #B200FF;
+            --accent-neon-green: #39FF14;
+            --text-color: #E0E0E0;
+            --text-muted-color: #A0A0A0;
+            --background-color: #1A1A2E;
+            --content-bg-color: #16213E;
+            --border-color: #334257;
+            --input-bg-color: #0F0F1A;
+            --error-color: #FF69B4;
+            --niras-red: #D22137;
+            --card-shadow-glow: 0 0 8px var(--primary-neon-blue), 0 0 15px var(--primary-neon-blue);
+            --input-shadow-glow: 0 0 5px var(--primary-neon-blue);
+            --button-shadow-glow: 0 0 10px var(--accent-neon-green);
+            --radio-checked-shadow: 0 0 8px var(--secondary-neon-purple);
+        }
+
+        html[data-theme="light"] {
+            /* NIRAS Standard Light Theme */
+            --primary-color: #00A4E0;
+            --secondary-color: #E5F6FD;
+            --accent-color: #78BE20;
+            /* Grøn til knapper i Light Mode */
+            --text-color: #212529;
+            --text-muted-color: #6c757d;
+            --background-color: #F8F9FA;
+            --content-bg-color: #FFFFFF;
+            --border-color: #DEE2E6;
+            --input-bg-color: #FFFFFF;
+            /* Explicitly white background for inputs in light mode */
+            --error-color: #D22137;
+            --card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.07), 0 2px 4px -2px rgba(0, 0, 0, 0.04);
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--background-color);
+            color: var(--text-color);
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+            box-sizing: border-box;
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 650px;
+        }
+
+        .calculator-container {
+            background: var(--content-bg-color);
+            border-radius: 16px;
+            border: 1px solid var(--border-color);
+            transition: background-color 0.3s, border-color 0.3s, box-shadow 0.3s;
+        }
+
+        html[data-theme="light"] .calculator-container {
+            box-shadow: var(--card-shadow);
+        }
+
+        html[data-theme="dark"] .calculator-container {
+            box-shadow: var(--card-shadow-glow);
+            border-color: var(--primary-neon-blue);
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 30px 0;
+        }
+
+        .header-controls {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .logo {
+            text-align: left;
+        }
+
+        .logo-main {
+            font-size: 2.5rem;
+            font-weight: 700;
+            letter-spacing: 2px;
+            line-height: 1;
+            transition: color 0.3s, text-shadow 0.3s, filter 0.3s;
+        }
+
+        .logo-main svg {
+            width: 130px;
+            /* Controls the size of the logo */
+            height: auto;
+            display: block;
+        }
+
+        .logo-subtitle {
+            font-size: 0.8rem;
+            font-weight: 500;
+            letter-spacing: 1px;
+            display: block;
+            transition: color 0.3s, text-shadow 0.3s;
+        }
+
+        /* Light Mode Logo */
+        html[data-theme="light"] .logo-main svg {
+            fill: var(--niras-red);
+            filter: none;
+        }
+
+        html[data-theme="light"] .logo-subtitle {
+            color: var(--niras-red);
+            text-shadow: none;
+        }
+
+        /* Dark Mode Logo */
+        html[data-theme="dark"] .logo-main svg {
+            fill: var(--secondary-neon-purple);
+            /* Lyserød for NIRAS */
+            filter: drop-shadow(0 0 4px var(--secondary-neon-purple)) drop-shadow(0 0 8px var(--secondary-neon-purple));
+        }
+
+        html[data-theme="dark"] .logo-subtitle {
+            color: var(--primary-neon-blue);
+            /* Lyseblå for Ventilationsberegner */
+            text-shadow: 0 0 4px var(--primary-neon-blue), 0 0 8px var(--primary-neon-blue);
+        }
+
+        .global-settings {
+            padding: 15px 30px 10px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .global-settings .input-group {
+            max-width: 200px;
+            margin-bottom: 0;
+        }
+
+        .dimension-warning {
+            color: var(--error-color);
+            font-weight: bold;
+        }
+
+
+        /* Styling for system-menuen */
+        .system-menu-container {
+            position: relative;
+            display: inline-block;
+            /* Gør at menuen kan placeres præcist */
+        }
+
+        .system-menu-btn {
+            background: var(--input-bg-color);
+            border: 1px solid var(--border-color);
+            border-radius: 50%;
+            width: 32px;
+            height: 32px;
+            cursor: pointer;
+            font-size: 1.2rem;
+            color: var(--text-muted-color);
+            margin-left: 10px;
+        }
+
+        .system-menu-btn:hover {
+            border-color: var(--primary-color);
+            color: var(--primary-color);
+        }
+
+        .system-menu-dropdown {
+            position: absolute;
+            right: 0;
+            top: 40px;
+            /* Lige under knappen */
+            background-color: var(--content-bg-color);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            box-shadow: var(--card-shadow, 0 4px 8px rgba(0, 0, 0, 0.2));
+            z-index: 10;
+            min-width: 160px;
+            overflow: hidden;
+            /* Sikrer at indhold holder sig indenfor border-radius */
+        }
+
+        .system-menu-dropdown a {
+            color: var(--text-color);
+            padding: 12px 16px;
+            text-decoration: none;
+            display: block;
+            font-size: 0.9rem;
+        }
+
+        .system-menu-dropdown a:hover {
+            background-color: var(--border-color);
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .fittings-table .auto-generated td {
+            color: var(--error-color);
+            /* Bruger din eksisterende "fejl"-farve */
+            font-style: italic;
+        }
+
+        .fittings-table th,
+        .fittings-table td {
+            padding: 6px 10px;
+            /* Reducerer lodret padding */
+        }
+
+        .fittings-table td {
+            font-size: 0.95rem;
+            /* Gør brødteksten lidt mindre */
+        }
+
+        .fittings-table td small {
+            font-size: 0.75rem;
+            /* Gør den lille tekst lidt mindre */
+        }
+
+        /* Stil for låste inputfelter */
+        input:disabled,
+        .radio-group.disabled label {
+            background-color: var(--border-color) !important;
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
+
+        .input-with-button {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .input-with-button .input-field {
+            flex-grow: 1;
+        }
+
+        .help-button {
+            padding: 0;
+            width: 32px;
+            height: 32px;
+            flex-shrink: 0;
+            background-color: var(--input-bg-color);
+            border: 1px solid var(--border-color);
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: var(--text-muted-color);
+            transition: all 0.2s;
+        }
+
+        .help-button:hover {
+            border-color: var(--primary-color);
+            color: var(--primary-color);
+        }
+
+        html[data-theme="dark"] .help-button:hover {
+            box-shadow: var(--input-shadow-glow);
+        }
+
+
+        .tab-nav {
+            display: flex;
+        }
+
+        .tab-link {
+            flex: 1;
+            padding: 15px;
+            text-align: center;
+            background: none;
+            border: none;
+            font-size: 1rem;
+            font-weight: 500;
+            cursor: pointer;
+            color: var(--text-muted-color);
+            border-bottom: 3px solid transparent;
+            transition: all 0.2s;
+        }
+
+        .tab-link:hover {
+            background-color: var(--secondary-color);
+            color: var(--primary-color);
+        }
+
+        .tab-link.active {
+            color: var(--primary-color);
+            border-bottom-color: var(--primary-color);
+            font-weight: 700;
+        }
+
+        html[data-theme="dark"] .tab-link.active {
+            text-shadow: 0 0 5px var(--primary-neon-blue);
+            box-shadow: 0 2px 8px -2px var(--primary-neon-blue);
+        }
+
+        .tab-content {
+            padding: 30px;
+        }
+
+        .tab-content.hidden {
+            display: none;
+        }
+
+        h2 {
+            font-size: 1.4rem;
+            border-bottom: 2px solid var(--border-color);
+            padding-bottom: 10px;
+            margin: 0 0 25px 0;
+            color: var(--primary-color);
+        }
+
+        html[data-theme="dark"] h2 {
+            text-shadow: 0 0 3px var(--primary-neon-blue);
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            font-size: 0.9rem;
+            color: var(--text-muted-color);
+        }
+
+        .input-group {
+            margin-bottom: 20px;
+        }
+
+        .input-unit-wrapper {
+            position: relative;
+        }
+
+        .input-unit-wrapper::after {
+            content: attr(data-unit);
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-muted-color);
+            font-size: 0.9rem;
+            pointer-events: none;
+        }
+
+        .input-field[type="text"],
+        .input-field[type="number"] {
+            padding-right: 50px;
+            /* Make space for the unit */
+        }
+
+        .input-field,
+        select {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            box-sizing: border-box;
+            font-size: 1rem;
+            background-color: var(--input-bg-color);
+            color: var(--text-color);
+            transition: background-color 0.3s, color 0.3s, border-color 0.3s, box-shadow 0.3s;
+        }
+
+        html[data-theme="dark"] .input-field {
+            box-shadow: 0 0 3px rgba(var(--primary-neon-blue), 0.3);
+        }
+
+        .input-field:focus,
+        select:focus {
+            border-color: var(--primary-color);
+            outline: none;
+        }
+
+        html[data-theme="light"] .input-field:focus,
+        html[data-theme="light"] select:focus {
+            box-shadow: 0 0 0 3px rgba(0, 164, 224, 0.2);
+        }
+
+        html[data-theme="dark"] .input-field:focus,
+        html[data-theme="dark"] select:focus {
+            box-shadow: var(--input-shadow-glow);
+        }
+
+        .input-field-group {
+            display: grid;
+            gap: 10px;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+        }
+
+        .input-field-group>div {
+            flex: 1;
+        }
+
+        .radio-group {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            border-radius: 8px;
+            padding: 5px;
+            background-color: var(--input-bg-color);
+            transition: background-color 0.3s;
+            border: 1px solid var(--border-color);
+        }
+
+        .radio-group label {
+            text-align: center;
+            padding: 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background-color 0.3s, color 0.3s, box-shadow 0.3s;
+            font-weight: 500;
+            color: var(--text-color);
+        }
+
+        .radio-group input[type="radio"] {
+            display: none;
+        }
+
+        html[data-theme="light"] .radio-group input[type="radio"]:checked+label {
+            background-color: var(--primary-color);
+            color: white;
+        }
+
+        html[data-theme="dark"] .radio-group input[type="radio"]:checked+label {
+            background-color: var(--secondary-neon-purple);
+            color: white;
+            box-shadow: var(--radio-checked-shadow);
+            text-shadow: 0 0 5px white;
+        }
+
+        /* Primary Button Styling */
+        .button.primary {
+            background-color: var(--accent-color);
+            color: var(--background-color);
+        }
+
+        html[data-theme="dark"] .button.primary {
+            background-color: var(--secondary-neon-purple);
+            /* Lyserød baggrund i Dark Mode */
+            color: white;
+            /* Hvid tekst på lyserød baggrund */
+            text-shadow: 0 0 5px rgba(255, 255, 255, 0.7);
+            /* Hvidligt skær på tekst */
+        }
+
+        .button.primary:hover {
+            opacity: 0.85;
+        }
+
+        html[data-theme="dark"] .button.primary:hover {
+            box-shadow: var(--button-shadow-glow);
+        }
+
+        .button.secondary {
+            background-color: var(--border-color);
+            color: var(--text-color);
+        }
+
+        .button.secondary:hover {
+            opacity: 0.85;
+        }
+
+        html[data-theme="dark"] .button.secondary:hover {
+            box-shadow: 0 0 5px var(--text-muted-color);
+        }
+
+        .button {
+            width: 100%;
+            padding: 15px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1.1rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: opacity 0.2s, box-shadow 0.3s, background-color 0.3s, color 0.3s, text-shadow 0.3s;
+            margin-top: 10px;
+        }
+
+        html[data-theme="dark"] .button:not(.primary) {
+            text-shadow: 0 0 3px rgba(0, 0, 0, 0.5);
+        }
+
+        /* Just for secondary buttons etc. */
+
+        .results-container {
+            margin-top: 20px;
+            display: grid;
+            gap: 20px;
+        }
+
+        .result-card {
+            background: var(--secondary-color);
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 5px solid var(--accent-color);
+            transition: background-color 0.3s, border-color 0.3s, box-shadow 0.3s;
+        }
+
+        html[data-theme="dark"] .result-card {
+            background-color: var(--content-bg-color);
+            box-shadow: var(--card-shadow-glow);
+        }
+
+        .result-card.error {
+            border-left-color: var(--error-color);
+        }
+
+        html[data-theme="dark"] .result-card.error {
+            box-shadow: 0 0 8px var(--error-color);
+        }
+
+        .result-card h3 {
+            margin-top: 0;
+            margin-bottom: 15px;
+            color: var(--accent-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        html[data-theme="dark"] .result-card h3 {
+            text-shadow: 0 0 5px var(--accent-color);
+        }
+
+        .result-card p {
+            margin: 10px 0;
+            font-size: 1rem;
+            line-height: 1.5;
+            color: var(--text-color);
+        }
+
+        .result-card p strong {
+            font-weight: 500;
+            color: var(--primary-color);
+        }
+
+        .highlight {
+            font-size: 1.1rem;
+            font-weight: bold;
+        }
+
+        .comparison-table,
+        .fittings-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+
+        .comparison-table th,
+        .comparison-table td,
+        .fittings-table th,
+        .fittings-table td {
+            text-align: left;
+            padding: 10px;
+            border-bottom: 1px solid var(--border-color);
+            color: var(--text-color);
+        }
+
+        .comparison-table th,
+        .fittings-table th {
+            font-weight: 500;
+            color: var(--primary-color);
+        }
+
+        .comparison-table .chosen-row td {
+            font-weight: bold;
+            color: var(--accent-color);
+        }
+
+        .fittings-table tfoot td {
+            font-weight: bold;
+            font-size: 1.1rem;
+            color: var(--accent-color);
+        }
+
+        html[data-theme="dark"] .fittings-table tfoot td {
+            text-shadow: 0 0 3px var(--accent-color);
+        }
+
+        .delete-btn,
+        .details-btn {
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 1.2rem;
+        }
+
+        .delete-btn {
+            color: var(--error-color);
+        }
+
+        html[data-theme="dark"] .delete-btn {
+            text-shadow: 0 0 3px var(--error-color);
+        }
+
+        .details-btn {
+            color: var(--primary-color);
+            font-weight: bold;
+        }
+
+        html[data-theme="dark"] .details-btn {
+            text-shadow: 0 0 3px var(--primary-neon-blue);
+        }
+
+        .sub-group {
+            border-left: 3px solid var(--primary-color);
+            padding-left: 15px;
+            margin-top: 15px;
+        }
+
+        .theme-switch-wrapper {
+            display: flex;
+            align-items: center;
+        }
+
+        .theme-switch {
+            position: relative;
+            display: inline-block;
+            width: 50px;
+            height: 26px;
+        }
+
+        .theme-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: var(--border-color);
+            transition: .4s;
+            border-radius: 26px;
+        }
+
+        html[data-theme="dark"] .slider {
+            box-shadow: 0 0 5px rgba(255, 255, 255, 0.1);
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 20px;
+            width: 20px;
+            left: 3px;
+            bottom: 3px;
+            background-color: var(--content-bg-color);
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        html[data-theme="dark"] .slider:before {
+            box-shadow: 0 0 8px rgba(255, 255, 255, 0.3);
+        }
+
+        input:checked+.slider {
+            background-color: var(--accent-neon-green);
+        }
+
+        html[data-theme="dark"] input:checked+.slider {
+            box-shadow: 0 0 8px var(--accent-neon-green);
+        }
+
+        input:checked+.slider:before {
+            transform: translateX(24px);
+        }
+
+        .theme-switch-label {
+            color: var(--text-muted-color);
+            font-size: 0.9rem;
+            margin-right: 10px;
+            white-space: nowrap;
+        }
+
+        /* Modal for Details */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0, 0, 0, 0.7);
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-content {
+            background-color: var(--content-bg-color);
+            margin: auto;
+            padding: 25px;
+            border: 1px solid var(--primary-color);
+            width: 90%;
+            max-width: 600px;
+            border-radius: 12px;
+        }
+
+        html[data-theme="dark"] .modal-content {
+            box-shadow: var(--card-shadow-glow);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 10px;
+        }
+
+        .modal-header h3 {
+            color: var(--accent-color);
+            margin: 0;
+        }
+
+        html[data-theme="dark"] .modal-header h3 {
+            text-shadow: 0 0 5px var(--accent-color);
+        }
+
+        .close-button {
+            color: var(--text-muted-color);
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .close-button:hover,
+        .close-button:focus {
+            color: var(--text-color);
+        }
+
+        .modal-body {
+            padding-top: 15px;
+            max-height: 60vh;
+            overflow-y: auto;
+        }
+
+        .modal-body p,
+        .modal-body li {
+            margin: 5px 0;
+        }
+
+        .modal-body strong {
+            color: var(--primary-color);
+        }
+
+        .modal-body code {
+            background-color: var(--border-color);
+            padding: 2px 5px;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+
+        /* Illustration Styles */
+        .illustration-container {
+            margin: -10px auto 20px auto;
+            padding: 10px;
+            max-width: 250px;
+        }
+
+        .illustration-container svg {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+
+        .illustration-container .line {
+            stroke: var(--primary-neon-blue);
+            stroke-width: 2.5;
+            fill: none;
+            stroke-linecap: round;
+        }
+
+        .illustration-container .label {
+            font-family: 'Inter', sans-serif;
+            font-size: 14px;
+            font-weight: bold;
+            fill: var(--secondary-neon-purple);
+            text-shadow: 0 0 3px var(--secondary-neon-purple);
+        }
+
+        html[data-theme="light"] .illustration-container .line {
+            stroke: var(--primary-color);
+        }
+
+        html[data-theme="light"] .illustration-container .label {
+            fill: var(--text-color);
+            text-shadow: none;
+        }
+
+        .app-footer {
+            text-align: center;
+            padding: 20px 0 0 0;
+        }
+
+        .app-footer p {
+            font-size: 0.8rem;
+            color: var(--text-muted-color);
+        }
+
+        @media print {
+
+            /* Skjul hele app'en, når der printes */
+            body>.container,
+            .app-footer,
+            .modal {
+                display: none !important;
+            }
+
+            /* Vis kun print-containeren */
+            #print-container {
+                display: block !important;
+            }
+
+            /* Grundlæggende styling for print-dokumentet */
+            .print-table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-top: 20px;
+                font-size: 10pt;
+            }
+
+            /* NYT: Nulstil styling for overskrifter ved print */
+            #print-container h1,
+            #print-container h2,
+            #print-container h3 {
+                color: #000000;
+                /* Gør teksten helt sort */
+                text-shadow: none;
+                /* Fjerner enhver glød-effekt */
+            }
+
+            .print-table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-top: 20px;
+                font-size: 10pt;
+            }
+
+            .print-table th,
+            .print-table td {
+                border: 1px solid #ccc;
+                padding: 8px;
+                text-align: left;
+            }
+
+            .print-table th {
+                background-color: #f2f2f2;
+                font-weight: bold;
+            }
+
+            .print-table tfoot td {
+                font-weight: bold;
+            }
+
+            .print-summary {
+                margin-top: 20px;
+                padding-top: 10px;
+                border-top: 2px solid #000;
+            }
+        }
+
+        /* Skjuler print-containeren som standard */
+        #print-container {
+            display: none;
+        }
+
+        /* ---  MOBIL-CSS Justeringer --- */
+        @media (max-width: 550px) {
+
+            /* Gør alt indhold lidt mere kompakt */
+            body {
+                padding: 10px 5px;
+            }
+
+            .tab-content {
+                padding: 20px 15px;
+            }
+
+            h2 {
+                font-size: 1.25rem;
+            }
+
+            .input-field,
+            select,
+            .button {
+                padding: 11px;
+                font-size: 0.95rem;
+            }
+
+            label {
+                font-size: 0.85rem;
+            }
+
+            .header {
+                padding: 15px 20px 0;
+            }
+
+            .theme-switch-label {
+                display: none;
+            }
+
+            /* Fix for faneblade: Gør dem mindre og lad dem flyde */
+            .tab-nav {
+                flex-wrap: wrap;
+                /* Giver lov til at bryde til næste linje */
+            }
+
+            .tab-link {
+                font-size: 0.8rem;
+                padding: 12px 5px;
+                flex-basis: 33%;
+                /* Prøver at holde 3 pr. linje */
+                flex-grow: 1;
+            }
+
+            /* Fix for radio-knapper: 
+       Gør dem til 2 kolonner, men lad dem tilpasse sig indholdet */
+            .radio-group {
+                grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+            }
+
+            .radio-group label {
+                padding: 10px 5px;
+                font-size: 0.85rem;
+            }
+
+            /* Fix for input-felter, der er for brede */
+            .input-field-group {
+                /* Denne får f.eks. Vinkel/Radius-felterne til at stable sig pænt */
+                grid-template-columns: 1fr 1fr;
+            }
+        }
