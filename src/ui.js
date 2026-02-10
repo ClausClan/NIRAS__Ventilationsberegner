@@ -276,28 +276,63 @@ export function showSystemComponentDetails(id) {
     const modalTitle = document.querySelector('#modalTitle');
     const modalBody = document.querySelector('#modalBody');
     const detailsModal = document.getElementById('detailsModal');
-    const details = component.calculationDetails;
+    const data = component.calculationDetails;
 
     modalTitle.innerText = `Detaljer for ${component.name}`;
-    let html = `<p><strong>Luftmængde:</strong> ${formatLocalFloat(component.airflow, 0)} m³/h</p>`;
-
-    if (component.velocity) html += `<p><strong>Hastighed:</strong> ${formatLocalFloat(component.velocity, 2)} m/s</p>`;
+    let bodyHtml = '';
 
     if (component.type === 'straightDuct') {
-        html += `<p><strong>Længde:</strong> ${formatLocalFloat(component.length, 2)} m</p>
-                 <p><strong>Diameter/Dimension:</strong> ${details.dimension}</p>
-                 <p><strong>Friktionsfaktor (f):</strong> ${formatLocalFloat(details.frictionFactor, 4)}</p>
-                 <p><strong>Tryktab pr. m:</strong> ${formatLocalFloat(details.pressureDropPerMeter, 2)} Pa/m</p>
-                 <p><strong>Total Tryktab:</strong> ${formatLocalFloat(component.pressureLoss, 2)} Pa</p>`;
-    } else if (component.type === 'fitting') {
-        if (details.zeta !== undefined) html += `<p><strong>Zeta (ζ):</strong> ${formatLocalFloat(details.zeta, 3)}</p>`;
-        html += `<p><strong>Dynamisk Tryk:</strong> ${formatLocalFloat(details.Pdyn_Pa, 2)} Pa</p>
-                 <p><strong>Total Tryktab:</strong> ${formatLocalFloat(component.pressureLoss, 2)} Pa</p>`;
-        if (details.loss1) html += `<p><strong>Tab Gren 1:</strong> ${formatLocalFloat(details.loss1, 2)} Pa</p>`;
-        if (details.loss2) html += `<p><strong>Tab Gren 2:</strong> ${formatLocalFloat(details.loss2, 2)} Pa</p>`;
+        const dpPerMeter = data.pressureDrop || 0;
+        bodyHtml = `<p><strong>Beregning for Lige Kanal</strong></p>
+            <p><strong>Dimension:</strong> ${data.dimension || '-'}</p>
+            <p><strong>Hydraulisk Diameter (Dₕ, intern):</strong> ${formatLocalFloat(data.D_hyd_int || 0, 4)} m</p>
+            <p><strong>Hastighed (v):</strong> ${formatLocalFloat(data.velocity || component.velocity, 2)} m/s</p>
+            <p><strong>Reynolds Tal (Re):</strong> ${data.reynolds ? data.reynolds.toExponential(2).replace('.', ',') : '-'}</p>
+            <p><strong>Friktionsfaktor (λ):</strong> ${formatLocalFloat(data.lambda || 0, 4)}</p><hr>
+            <p><strong>Tryktab pr. meter (dp) =</strong> (λ / Dₕ) * (ρ/2) * v² = <strong>${formatLocalFloat(dpPerMeter, 2)} Pa/m</strong></p>
+            <p><strong>Samlet Tryktab =</strong> dp * Længde = ${formatLocalFloat(dpPerMeter, 2)} * ${formatLocalFloat(data.length || component.length, 2)} = <strong>${formatLocalFloat(component.pressureLoss, 2)} Pa</strong></p>`;
+
+    } else if (component.type === 'tee_bullhead') {
+        // Logik for Dobbelt T-stykke
+        const title = `Beregning for Dobbelt T-stykke (${data.chosenPath || 'Ukendt'})`;
+        const pressureSource = `ved indløb (Pₐᵧₙ)`;
+        bodyHtml = `<p><strong>${title}</strong></p>
+            <p><strong>Areal (A, i gren):</strong> ${data.A_m2 ? formatLocalFloat(data.A_m2, 5) : '-'} m²</p>
+            <p><strong>Hastighed (v, i gren):</strong> ${data.v_ms ? formatLocalFloat(data.v_ms, 2) : '-'} m/s</p>
+            <p><strong>Zeta-værdi (ζ, dynamisk):</strong> ${formatLocalFloat(data.zeta || 0, 3)}</p>
+            <p><strong>Dynamisk Tryk ${pressureSource}:</strong> ${formatLocalFloat(data.Pdyn_Pa || 0, 2)} Pa</p><hr>
+            <p><strong>Tryktab (Δp) =</strong> ζ * Pₐᵧₙ</p>
+            <p><strong>Δp =</strong> ${formatLocalFloat(data.zeta || 0, 3)} * ${formatLocalFloat(data.Pdyn_Pa || 0, 2)} = <strong>${formatLocalFloat(component.pressureLoss, 2)} Pa</strong></p>`;
+
+    } else if (component.type.includes('tee') || (data.type && data.type.includes('tee'))) {
+        // Logik for almindelige T-stykker
+        const title = data.type === 'tee_merge' ? `T-stykke (Samle, fra ${data.chosenPath})` : `T-stykke (Dele, til ${data.chosenPath})`;
+        const pressureSource = data.type === 'tee_merge' ? `ved udløb (Pₐᵧₙ)` : `ved indløb (Pₐᵧₙ)`;
+        bodyHtml = `<p><strong>Beregning for ${title}</strong></p>
+            <p><strong>Areal (A, i gren):</strong> ${formatLocalFloat(data.A_m2 || 0, 5)} m²</p>
+            <p><strong>Hastighed (v, i gren):</strong> ${formatLocalFloat(data.v_ms || 0, 2)} m/s</p>
+            <p><strong>Zeta-værdi (ζ, dynamisk):</strong> ${formatLocalFloat(data.zeta || 0, 3)}</p>
+            <p><strong>Dynamisk Tryk ${pressureSource}:</strong> ${formatLocalFloat(data.Pdyn_Pa || 0, 2)} Pa</p><hr>
+            <p><strong>Tryktab (Δp) =</strong> ζ * Pₐᵧₙ</p>
+            <p><strong>Δp =</strong> ${formatLocalFloat(data.zeta || 0, 3)} * ${formatLocalFloat(data.Pdyn_Pa || 0, 2)} = <strong>${formatLocalFloat(component.pressureLoss, 2)} Pa</strong></p>`;
+
+    } else if (data.zeta !== undefined) {
+        // Generisk for alle andre fittings med zeta (bøjninger, overgange osv.)
+        bodyHtml = `<p><strong>Beregning for Formstykke</strong></p>
+            <p><strong>Areal (A, effektivt):</strong> ${formatLocalFloat(data.A_m2 || 0, 5)} m²</p>
+            <p><strong>Hastighed (v, reference):</strong> ${formatLocalFloat(data.v_ms || 0, 2)} m/s</p>
+            <p><strong>Zeta-værdi (ζ, interpoleret):</strong> ${formatLocalFloat(data.zeta, 3)}</p>
+            <p><strong>Dynamisk Tryk (Pₐᵧₙ):</strong> ${formatLocalFloat(data.Pdyn_Pa || 0, 2)} Pa</p><hr>
+            <p><strong>Tryktab (Δp) =</strong> ζ * Pₐᵧₙ</p>
+            <p><strong>Δp =</strong> ${formatLocalFloat(data.zeta, 3)} * ${formatLocalFloat(data.Pdyn_Pa || 0, 2)} = <strong>${formatLocalFloat(component.pressureLoss, 2)} Pa</strong></p>`;
+    } else {
+        // Fallback
+        bodyHtml = `<p><strong>Detaljer</strong></p>
+            <p><strong>Luftmængde:</strong> ${formatLocalFloat(component.airflow, 0)} m³/h</p>
+            <p><strong>Tryktab:</strong> ${formatLocalFloat(component.pressureLoss, 2)} Pa</p>`;
     }
 
-    modalBody.innerHTML = html;
+    modalBody.innerHTML = bodyHtml;
     detailsModal.style.display = 'flex';
 }
 
@@ -810,8 +845,113 @@ export function toggleSystemMenu() {
 
 export function printDocumentation(event) {
     if (event) event.preventDefault();
-    document.getElementById('systemMenu').classList.add('hidden');
+    toggleSystemMenu();
+
+    const systemComponents = getSystemComponents();
+
+    if (systemComponents.length === 0) {
+        alert("Systemet er tomt. Tilføj komponenter for at generere dokumentation.");
+        return;
+    }
+
+    // --- Byg tabelrækker ---
+    let totalPressureDrop = 0;
+    const tableRows = systemComponents.map(c => {
+        totalPressureDrop += c.pressureLoss;
+        const data = c.calculationDetails;
+
+        let pressureDropPerMeterText = '-';
+        if (c.type === 'straightDuct' && data && data.pressureDrop) {
+            pressureDropPerMeterText = formatLocalFloat(data.pressureDrop, 2);
+        }
+
+        let detailsText = '-';
+        if (data) {
+            if (data.lambda) {
+                detailsText = `λ: ${formatLocalFloat(data.lambda, 4)}`;
+            } else if (data.zeta) {
+                detailsText = `ζ: ${formatLocalFloat(data.zeta, 3)}`;
+            }
+        }
+
+        return `
+            <tr>
+                <td>${c.name}<br><small>${c.details || ''}</small></td>
+                <td>${formatLocalFloat(c.airflow, 0)}</td>
+                <td>${formatLocalFloat(c.newAirflowAfter || c.airflow, 0)}</td>
+                <td>${c.velocity ? formatLocalFloat(c.velocity, 2) : '-'}</td>
+                <td>${detailsText}</td>
+                <td>${pressureDropPerMeterText}</td>
+                <td>${formatLocalFloat(c.pressureLoss, 2)}</td>
+            </tr>
+        `;
+    }).join('');
+
+    // --- Saml den fulde HTML til print ---
+    const projectName = document.getElementById('projectName').value;
+    const startAirflow = document.getElementById('system_airflow').value;
+
+    // Handle potential missing label (fallback)
+    const systemTypeInput = document.querySelector('input[name="systemFlowType"]:checked');
+    let systemTypeLabel = 'Ukendt';
+    if (systemTypeInput) {
+        const label = document.querySelector(`label[for="${systemTypeInput.id}"]`);
+        if (label) systemTypeLabel = label.textContent;
+    }
+
+    const temperature = document.getElementById('temperature').value;
+    const printDate = new Date().toLocaleString('da-DK');
+
+    // Hent app-version fra sidfoden (safe check)
+    const footerP = document.querySelector('.app-footer p');
+    const appVersionText = footerP ? footerP.textContent.split(' --- ')[0] : 'Ventilationsberegner';
+
+    const printHtml = `
+        <h1>Dokumentation for Systemberegning</h1>
+        ${projectName ? `<h2>Projekt: ${projectName}</h2>` : ''}
+        <p>Genereret: ${printDate}</p>
+        <h3>Grunddata</h3>
+        <p><strong>Start Luftmængde:</strong> ${startAirflow} m³/h</p>
+        <p><strong>Systemtype:</strong> ${systemTypeLabel}</p>
+        <p><strong>Lufttemperatur:</strong> ${temperature} °C</p>
+        
+        <table class="print-table">
+            <thead>
+                <tr>
+                    <th>Komponent</th>
+                    <th>Luftmængde Ind [m³/h]</th>
+                    <th>Luftmængde Ud [m³/h]</th>
+                    <th>Hastighed [m/s]</th>
+                    <th>Detaljer (ζ/λ)</th>
+                    <th>Tryktab [Pa/m]</th>
+                    <th>Tryktab [Pa]</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${tableRows}
+            </tbody>
+            <tfoot>
+                <tr>
+                    <td colspan="6"><strong>Samlet Tryktab</strong></td>
+                    <td><strong>${formatLocalFloat(totalPressureDrop, 2)}</strong></td>
+                </tr>
+            </tfoot>
+        </table>
+        
+        <div style="margin-top: 30px; font-size: 8pt; color: #777;">
+            <p>Beregningen er foretaget med NIRAS Ventilationsberegner (${appVersionText})</p>
+        </div>
+    `;
+
+    // --- Opret, print, og fjern print-elementet ---
+    const printContainer = document.createElement('div');
+    printContainer.id = 'print-container';
+    printContainer.innerHTML = printHtml;
+    document.body.appendChild(printContainer);
+
     window.print();
+
+    document.body.removeChild(printContainer);
 }
 
 // --- Dynamic UI Updates ---
