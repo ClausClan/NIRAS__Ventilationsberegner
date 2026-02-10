@@ -1,7 +1,26 @@
-
+// Main application logic - Cache Bust 1
 import { parseLocalFloat, getInternalDim, formatLocalFloat } from './utils.js';
 import * as physics from './physics.js';
-import * as state from './state.js';
+import {
+    stateManager,
+    addSystemComponent,
+    removeFitting,
+    resetFittings,
+    getSystemComponents,
+    removeLastSystemComponent,
+    clearSystem,
+    setSystemComponents,
+    getSystemComponent,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+    addFitting,
+    getCorrectionTargetId,
+    setCorrectionTargetId,
+    setDuctResult
+} from './app_state.js';
+import { projectManager } from './projects.js';
 import * as ui from './ui.js';
 
 // --- Global Scope for UI interactions ---
@@ -11,42 +30,71 @@ window.showDuctDetails = ui.showDuctDetails;
 window.showFittingDetails = ui.showFittingDetails;
 window.showSystemComponentDetails = ui.showSystemComponentDetails;
 window.showHelpModal = ui.showHelpModal;
-window.deleteFitting = state.removeFitting; // Needs UI update wrapper? No, see below.
-window.resetFittings = () => { state.resetFittings(); ui.renderFittingsResult(); };
-window.onclick = (event) => {
-    const detailsModal = document.getElementById('detailsModal');
-    const helpModal = document.getElementById('helpModal');
-    if (event.target == detailsModal) detailsModal.style.display = "none";
-    if (event.target == helpModal) helpModal.style.display = "none";
-};
+window.showConfirm = ui.showConfirm;
+window.deleteFitting = removeFitting;
+window.resetFittings = () => { resetFittings(); ui.renderFittingsResult(); };
+
+// --- Undo/Redo Logic ---
+function handleUndo() {
+    if (undo()) {
+        ui.renderSystem();
+        ui.handleComponentTypeChange();
+        ui.updateUndoRedoUI(canUndo(), canRedo());
+    }
+}
+
+function handleRedo() {
+    if (redo()) {
+        ui.renderSystem();
+        ui.handleComponentTypeChange();
+        ui.updateUndoRedoUI(canUndo(), canRedo());
+    }
+}
+
+// Listen for state changes to update UI (Autosave indicator & Buttons)
+window.addEventListener('stateChanged', () => {
+    ui.updateUndoRedoUI(canUndo(), canRedo());
+    ui.showSaveStatus('Gemt', 'saved');
+});
+
+// Keyboard Shortcuts
+document.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+        e.preventDefault();
+        handleUndo();
+    } else if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'Z' && e.shiftKey))) {
+        e.preventDefault();
+        handleRedo();
+    }
+});
 
 // Wrapper for deleteFitting to update UI
-const originalRemoveFitting = state.removeFitting;
+// Wrapper for deleteFitting to update UI
 window.deleteFitting = (id) => {
-    originalRemoveFitting(id);
+    removeFitting(id);
     ui.renderFittingsResult();
 };
 
 window.handleDeleteLastComponent = () => {
-    state.removeLastSystemComponent();
+    removeLastSystemComponent();
     ui.renderSystem();
     ui.handleComponentTypeChange(); // Update inputs (e.g. valid options based on new last component)
 };
 
+// Event Handlers for Global Actions (using showConfirm)
 window.clearSystem = (event) => {
     if (event) event.preventDefault();
-    if (confirm('Er du sikker på, at du vil starte en ny beregning? Alle data vil gå tabt.')) {
-        state.clearSystem();
+    showConfirm('Er du sikker på, at du vil starte en ny beregning? Alle data vil gå tabt.', () => {
+        clearSystem();
         document.getElementById('projectName').value = '';
         ui.renderSystem();
         ui.handleComponentTypeChange();
-        ui.toggleSystemMenu();
-    }
+    });
 };
 
 window.saveSystem = (event) => {
     if (event) event.preventDefault();
-    const systemComponents = state.getSystemComponents();
+    const systemComponents = getSystemComponents();
     const data = {
         projectName: document.getElementById('projectName').value,
         startAirflow: document.getElementById('system_airflow').value,
@@ -73,7 +121,7 @@ window.triggerFileLoad = (event) => {
 };
 
 window.requestCorrection = (id) => {
-    state.setCorrectionTargetId(id);
+    setCorrectionTargetId(id);
     document.getElementById('systemComponentType').value = 'manualLoss';
     ui.handleComponentTypeChange();
     document.getElementById('systemComponentType').scrollIntoView({ behavior: 'smooth' });
@@ -113,7 +161,7 @@ function handleDuctCalculation(event) {
             result = physics.analyzeDuct(Q, shape, airflow_m3h, RHO, NU, diameter, sideA, sideB);
         }
 
-        state.setDuctResult(result);
+        setDuctResult(result);
         ui.renderDuctResult(result);
     } catch (error) {
         dimResultsContainer.innerHTML = `<div class="error-message">Fejl: ${error.message}</div>`;
@@ -143,14 +191,14 @@ function handleFittingCalculation(event) {
                     const d_in = parseLocalFloat(document.getElementById('d_in').value), d_out1 = parseLocalFloat(document.getElementById('d_out1').value), d_out2 = parseLocalFloat(document.getElementById('d_out2').value);
                     if (isNaN(d_in) || isNaN(d_out1) || isNaN(d_out2)) throw new Error("Ugyldige diametre.");
                     const results = physics.calculateBullheadTeeLoss({ q_in, q_out1, q_out2 }, { d_in, d_out1, d_out2 }, RHO);
-                    state.addFitting({ id: Date.now(), name: `Dobbelt Afgr. (Ud 1)`, airflow: q_out1, pressureLoss: results.loss1, details: results.details1, type: 'tee' });
-                    state.addFitting({ id: Date.now() + 1, name: `Dobbelt Afgr. (Ud 2)`, airflow: q_out2, pressureLoss: results.loss2, details: results.details2, type: 'tee' });
+                    addFitting({ id: Date.now(), name: `Dobbelt Afgr. (Ud 1)`, airflow: q_out1, pressureLoss: results.loss1, details: results.details1, type: 'tee' });
+                    addFitting({ id: Date.now() + 1, name: `Dobbelt Afgr. (Ud 2)`, airflow: q_out2, pressureLoss: results.loss2, details: results.details2, type: 'tee' });
                 } else { // merging
                     const q_in1 = parseLocalFloat(document.getElementById('q_in1').value), q_in2 = parseLocalFloat(document.getElementById('q_in2').value);
                     const d_common = parseLocalFloat(document.getElementById('d_common').value), d_in1 = parseLocalFloat(document.getElementById('d_in1').value), d_in2 = parseLocalFloat(document.getElementById('d_in2').value);
                     const results = physics.calculateConvergingBullheadTeeLoss({ q_in1, q_in2 }, { d_in1, d_in2, d_common }, RHO);
-                    state.addFitting({ id: Date.now(), name: `Dobbelt Afgr. (Ind 1)`, airflow: q_in1, pressureLoss: results.loss1, details: results.details1, type: 'tee' });
-                    state.addFitting({ id: Date.now() + 1, name: `Dobbelt Afgr. (Ind 2)`, airflow: q_in2, pressureLoss: results.loss2, details: results.details2, type: 'tee' });
+                    addFitting({ id: Date.now(), name: `Dobbelt Afgr. (Ind 1)`, airflow: q_in1, pressureLoss: results.loss1, details: results.details1, type: 'tee' });
+                    addFitting({ id: Date.now() + 1, name: `Dobbelt Afgr. (Ind 2)`, airflow: q_in2, pressureLoss: results.loss2, details: results.details2, type: 'tee' });
                 }
             } else { // Standard Tees
                 const flowType = document.querySelector('input[name="fitTeeFlowType"]:checked').value;
@@ -162,8 +210,8 @@ function handleFittingCalculation(event) {
                     const d_branch = isSym ? d_in : parseLocalFloat(document.getElementById('d_branch').value);
                     const results = physics.calculateTeePressureLoss({ q_in, q_straight, q_branch }, { d_in, d_straight, d_branch }, RHO);
                     const name_base = isSym ? `T-stykke Sym. Ø${d_in}` : `T-stykke Asym.`;
-                    state.addFitting({ id: Date.now(), name: `${name_base} (Ligeud)`, airflow: q_straight, pressureLoss: results.loss_straight, details: results.details_straight, type: 'tee' });
-                    state.addFitting({ id: Date.now() + 1, name: `${name_base} (Afgrening)`, airflow: q_branch, pressureLoss: results.loss_branch, details: results.details_branch, type: 'tee' });
+                    addFitting({ id: Date.now(), name: `${name_base} (Ligeud)`, airflow: q_straight, pressureLoss: results.loss_straight, details: results.details_straight, type: 'tee' });
+                    addFitting({ id: Date.now() + 1, name: `${name_base} (Afgrening)`, airflow: q_branch, pressureLoss: results.loss_branch, details: results.details_branch, type: 'tee' });
                 } else { // merging
                     const q_straight = parseLocalFloat(document.getElementById('q_straight').value), q_branch = parseLocalFloat(document.getElementById('q_branch').value);
                     const d_common = parseLocalFloat(document.getElementById('d_in').value);
@@ -171,8 +219,8 @@ function handleFittingCalculation(event) {
                     const d_branch = isSym ? d_common : parseLocalFloat(document.getElementById('d_branch').value);
                     const results = physics.calculateConvergingTeePressureLoss({ q_straight, q_branch }, { d_common, d_straight, d_branch }, RHO);
                     const name_base = isSym ? `T-stykke Udsugning Sym. Ø${d_common}` : `T-stykke Udsugning Asym.`;
-                    state.addFitting({ id: Date.now(), name: `${name_base} (fra Ligeud)`, airflow: q_straight, pressureLoss: results.loss_straight, details: results.details_straight, type: 'tee' });
-                    state.addFitting({ id: Date.now() + 1, name: `${name_base} (fra Afgrening)`, airflow: q_branch, pressureLoss: results.loss_branch, details: results.details_branch, type: 'tee' });
+                    addFitting({ id: Date.now(), name: `${name_base} (fra Ligeud)`, airflow: q_straight, pressureLoss: results.loss_straight, details: results.details_straight, type: 'tee' });
+                    addFitting({ id: Date.now() + 1, name: `${name_base} (fra Afgrening)`, airflow: q_branch, pressureLoss: results.loss_branch, details: results.details_branch, type: 'tee' });
                 }
             }
         } else {
@@ -302,7 +350,7 @@ function handleFittingCalculation(event) {
             Pdyn_Pa = (RHO / 2) * v ** 2;
             loss = zeta * Pdyn_Pa;
             details = { zeta, Pdyn_Pa, A_m2: A, v_ms: v };
-            state.addFitting({ id: Date.now(), name, airflow: q_m3h, pressureLoss: loss, details, type: 'standard' });
+            addFitting({ id: Date.now(), name, airflow: q_m3h, pressureLoss: loss, details, type: 'standard' });
         }
         ui.renderFittingsResult();
     } catch (error) {
@@ -312,7 +360,7 @@ function handleFittingCalculation(event) {
 
 function handleAddComponent(event) {
     event.preventDefault();
-    const systemComponents = state.getSystemComponents();
+    const systemComponents = getSystemComponents();
 
     // --- 1. HENT AKTUELLE SYSTEMDATA ---
     const startAirflow = parseLocalFloat(document.getElementById('system_airflow').value);
@@ -333,7 +381,7 @@ function handleAddComponent(event) {
     const componentType = document.getElementById('systemComponentType').value;
     const globalFlowType = document.querySelector('input[name="systemFlowType"]:checked').value;
 
-    const correctionTargetId = state.getCorrectionTargetId();
+    const correctionTargetId = getCorrectionTargetId();
 
     try {
         // --- HJÆLPEFUNKTION TIL AUTOMATISKE OVERGANGE ---
@@ -402,7 +450,8 @@ function handleAddComponent(event) {
                 isAutoGenerated: true, isEstimated: isEstimated,
                 outletDimension: newInlet, newAirflowAfter: airflow
             };
-            state.addSystemComponent(transitionComponent);
+            console.log('Adding transition component:', transitionComponent);
+            addSystemComponent(transitionComponent);
         };
 
         // --- 2. OPRET BRUGER-VALGT KOMPONENT ---
@@ -433,7 +482,8 @@ function handleAddComponent(event) {
             }
             addTransitionIfNeeded(inletDimension);
             newComponent = { ...newComponent, type: 'straightDuct', name, details, velocity: performance.velocity, pressureLoss: performance.pressureDrop * length, calculationDetails: calcDetails, newAirflowAfter: airflow, outletDimension: outletDimension };
-            state.addSystemComponent(newComponent);
+            console.log('Adding new component:', newComponent);
+            addSystemComponent(newComponent);
 
         } else if (componentType === 'manualLoss') {
             const name = document.getElementById('manualLossName').value || 'Manuelt Tab';
@@ -456,12 +506,12 @@ function handleAddComponent(event) {
 
             if (correctionTargetId && targetIndex !== -1) {
                 // Insert at specific index + 1
-                const currentComps = state.getSystemComponents();
+                const currentComps = getSystemComponents();
                 currentComps.splice(targetIndex + 1, 0, newComponent);
-                state.setSystemComponents(currentComps);
-                state.setCorrectionTargetId(null);
+                setSystemComponents(currentComps);
+                setCorrectionTargetId(null);
             } else {
-                state.addSystemComponent(newComponent);
+                addSystemComponent(newComponent);
             }
 
         } else if (componentType === 'fitting') {
@@ -592,7 +642,7 @@ function handleAddComponent(event) {
 
             addTransitionIfNeeded(inletDimension);
             newComponent = { ...newComponent, type: 'fitting', name, details, velocity, pressureLoss, calculationDetails: calculationDetails, newAirflowAfter: newAirflowAfter, outletDimension: outletDimension };
-            state.addSystemComponent(newComponent);
+            addSystemComponent(newComponent);
         }
 
         ui.renderSystem();
@@ -620,10 +670,204 @@ async function initializeApp() {
     document.getElementsByName('ductShape').forEach(r => r.addEventListener('change', ui.updateDimUI));
     document.getElementById('constraintType').addEventListener('change', ui.updateConstraintDefaults);
 
+
     // System tab listeners
     document.getElementById('systemComponentType').addEventListener('change', ui.handleComponentTypeChange);
     document.getElementById('systemAddComponentForm').addEventListener('submit', handleAddComponent);
     document.getElementById('fileLoader').addEventListener('change', window.loadSystem);
+
+    // --- Project Management UI ---
+
+    // Inject Modal
+    const modalContainer = document.createElement('div');
+    modalContainer.innerHTML = ui.getProjectModalHtml();
+    document.body.appendChild(modalContainer.firstElementChild);
+
+    const projectModal = document.getElementById('projectModal');
+    const projectListContainer = document.getElementById('projectList');
+
+    // Open Modal
+    const openProjectModal = (mode) => {
+        console.log('openProjectModal called', mode);
+        try {
+            renderProjectList();
+            projectModal.classList.remove('hidden');
+            window.toggleSystemMenu(); // Close menu
+        } catch (e) {
+            console.error('Error in openProjectModal:', e);
+        }
+    };
+
+    const saveProjectAs = () => {
+        window.toggleSystemMenu(); // Close menu
+        let currentName = document.getElementById('projectName').value;
+        const name = prompt("Indtast projektnavn:", currentName);
+        if (name) {
+            try {
+                if (projectManager.projectExists(name)) {
+                    showConfirm(`Projektet "${name}" findes allerede. Vil du overskrive det?`, () => {
+                        try {
+                            projectManager.updateProject(name);
+                            document.getElementById('projectName').value = name;
+                            renderProjectList();
+                            alert(`Projekt "${name}" gemt.`);
+                        } catch (err) {
+                            alert('Fejl: ' + err.message);
+                        }
+                    });
+                } else {
+                    projectManager.createProject(name);
+                    document.getElementById('projectName').value = name;
+                    renderProjectList();
+                    alert(`Projekt "${name}" gemt.`);
+                }
+            } catch (err) {
+                alert('Fejl: ' + err.message);
+            }
+        }
+    };
+
+    // Attach listeners to menu buttons
+    document.getElementById('btnMenuNew').addEventListener('click', (e) => {
+        e.stopPropagation();
+        window.toggleSystemMenu(); // Close menu first
+        window.clearSystem();
+    });
+    document.getElementById('btnMenuLoad').addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        openProjectModal('load');
+    });
+    document.getElementById('btnMenuSaveAs').addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        saveProjectAs();
+    });
+    document.getElementById('btnMenuSaveFile').addEventListener('click', (e) => {
+        e.stopPropagation();
+        window.saveSystem(e);
+    });
+    document.getElementById('btnMenuLoadFile').addEventListener('click', (e) => {
+        e.stopPropagation();
+        window.triggerFileLoad(e);
+    });
+    document.getElementById('btnMenuPrint').addEventListener('click', (e) => {
+        e.stopPropagation();
+        window.printDocumentation(e);
+    });
+
+    // Remove old listener if it existed (garbage collection handles it, just removing the code block)
+    /* 
+    const btnOpenProject = document.getElementById('btnOpenProjectModal');
+    if (btnOpenProject) { ... } 
+    */
+
+    // Close Modal (click outside)
+    window.addEventListener('click', (e) => {
+        if (e.target === projectModal) {
+            console.log('[DEBUG] Window click outside modal detected. Closing modal.');
+            projectModal.classList.add('hidden');
+        }
+    });
+
+    // Render Project List
+    function renderProjectList() {
+        console.log('renderProjectList called');
+        if (!projectListContainer) {
+            console.error('projectListContainer is missing!');
+            return;
+        }
+        const projects = projectManager.listProjects();
+        console.log('Projects found:', projects);
+        projectListContainer.innerHTML = '';
+
+        if (projects.length === 0) {
+            projectListContainer.innerHTML = '<p style="text-align: center; color: var(--text-muted-color);">Ingen gemte projekter.</p>';
+            return;
+        }
+
+        projects.forEach(proj => {
+            const el = document.createElement('div');
+            el.className = 'project-item';
+            const dateStr = new Date(proj.timestamp).toLocaleString('da-DK');
+            el.innerHTML = `
+                <div class="project-info">
+                    <h3>${proj.name}</h3>
+                    <p>Gemt: ${dateStr}</p>
+                </div>
+                <div class="project-actions">
+                    <button class="project-btn load" data-name="${proj.name}" title="Hent">📂</button>
+                    <button class="project-btn delete" data-name="${proj.name}" title="Slet">🗑️</button>
+                </div>
+            `;
+            projectListContainer.appendChild(el);
+        });
+
+        // Add listeners to buttons
+        projectListContainer.querySelectorAll('.load').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation(); // Stop bubbling
+                const name = e.currentTarget.dataset.name;
+                console.log(`[DEBUG] Load button clicked for: ${name}`);
+
+                showConfirm(`Vil du hente projektet "${name}"? Nuværende ikke-gemte ændringer vil gå tabt.`, () => {
+                    console.log('[DEBUG] User confirmed Load.');
+                    try {
+                        projectManager.loadProject(name);
+                        projectModal.classList.add('hidden');
+                        ui.renderSystem();
+                        ui.handleComponentTypeChange();
+                        // Update Project Name Input
+                        document.getElementById('projectName').value = name;
+                        alert(`Projekt "${name}" hentet.`);
+                    } catch (err) {
+                        console.error('[DEBUG] Error loading project:', err);
+                        alert('Fejl: ' + err.message);
+                    }
+                });
+            });
+        });
+
+        projectListContainer.querySelectorAll('.delete').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const name = e.currentTarget.dataset.name;
+                console.log(`[DEBUG] Delete button clicked for: ${name}`);
+
+                showConfirm(`Er du sikker på, at du vil slette projektet "${name}"?`, () => {
+                    console.log('[DEBUG] User confirmed Delete.');
+                    projectManager.deleteProject(name);
+                    renderProjectList();
+                });
+            });
+        });
+    }
+
+    // New Project (Inside Modal)
+    document.getElementById('btnNewProject').addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        console.log('[DEBUG] New Project button (modal) clicked');
+
+        showConfirm('Er du sikker på, at du vil starte et nyt projekt?', () => {
+            console.log('[DEBUG] User confirmed New Project.');
+            clearSystem();
+            document.getElementById('projectName').value = '';
+            ui.renderSystem();
+            ui.handleComponentTypeChange();
+            projectModal.classList.add('hidden');
+        });
+    });
+
+    // Save Project As (Inside Modal)
+    document.getElementById('btnSaveProjectAs').addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        console.log('[DEBUG] Save As button (modal) clicked');
+
+        saveProjectAs();
+    });
+
 
     // Initial renders
     ui.populateDatalists();
@@ -667,10 +911,19 @@ async function initializeApp() {
     });
 
     // Help Button
-    // Help Button
     document.getElementById('helpButton').addEventListener('click', () => {
         ui.showHelpModal();
     });
+
+    // Undo/Redo Buttons
+    const undoBtn = document.getElementById('undoButton');
+    const redoBtn = document.getElementById('redoButton');
+    if (undoBtn) undoBtn.addEventListener('click', handleUndo);
+    if (redoBtn) redoBtn.addEventListener('click', handleRedo);
+
+    // Initial Undo/Redo UI State
+    // Initial Undo/Redo UI State
+    ui.updateUndoRedoUI(canUndo(), canRedo());
 
 }
 
@@ -689,7 +942,7 @@ window.loadSystem = (event) => {
             const radios = document.getElementsByName('systemFlowType');
             radios.forEach(r => { if (r.value === data.systemType) r.checked = true; });
 
-            state.setSystemComponents(data.components || []);
+            setSystemComponents(data.components || []);
             ui.renderSystem();
             ui.toggleSystemMenu();
         } catch (error) {
