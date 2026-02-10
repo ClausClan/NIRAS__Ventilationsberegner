@@ -1,6 +1,6 @@
 
 import { formatLocalFloat, parseLocalFloat } from './utils.js';
-import { getFittings, getSystemComponents, getDuctResult, getSystemComponent } from './state.js';
+import { getFittings, getSystemComponents, getDuctResult, getSystemComponent } from './app_state.js';
 import { STANDARD_ROUND_SIZES_MM, STANDARD_RECT_SIZES_MM, getAirProperties } from './physics.js';
 
 // --- HTML Generators ---
@@ -57,18 +57,39 @@ export function getFittingsFormHtml() {
         </section>`;
 }
 
+
+export function getProjectModalHtml() {
+    return `
+    <div id="projectModal" class="modal hidden">
+        <div class="modal-content">
+            <span class="close-modal" onclick="document.getElementById('projectModal').classList.add('hidden')">&times;</span>
+            <h2>Mine Projekter</h2>
+            <div style="margin-bottom: 15px;">
+                <button id="btnNewProject" class="button primary">Start Nyt Projekt</button>
+                <button id="btnSaveProjectAs" class="button secondary">Gem Som...</button>
+            </div>
+            <div id="projectList" class="project-list">
+                <!-- Projects will be loaded here -->
+            </div>
+        </div>
+    </div>`;
+}
+
 export function getSystemFormHtml() {
     return `
         <section>
             <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid var(--border-color); margin-bottom: 25px;">
                 <h2 style="border: none; margin: 0; padding-bottom: 10px;">Systemberegning</h2>
                 <div class="system-menu-container">
-                    <button class="system-menu-btn" onclick="window.toggleSystemMenu()">&#8942;</button>
+                    <button type="button" class="system-menu-btn" onclick="window.toggleSystemMenu()">&#8942;</button>
                     <div id="systemMenu" class="system-menu-dropdown hidden">
-                        <a href="#" onclick="window.clearSystem(event)">Ny Beregning</a>
-                        <a href="#" onclick="window.saveSystem(event)">Gem System...</a>
-                        <a href="#" onclick="window.triggerFileLoad(event)">Hent System...</a>
-                        <a href="#" onclick="window.printDocumentation(event)">Print Dokumentation...</a>
+                        <button type="button" id="btnMenuNew" class="menu-item-btn">Ny Beregning</button>
+                        <button type="button" id="btnMenuLoad" class="menu-item-btn">Hent Projekt...</button>
+                        <button type="button" id="btnMenuSaveAs" class="menu-item-btn">Gem Som (Projekt)...</button>
+                        <hr style="margin: 5px 0; border: 0; border-top: 1px solid var(--border-color);">
+                        <button type="button" id="btnMenuSaveFile" class="menu-item-btn">Gem Fil (JSON)...</button>
+                        <button type="button" id="btnMenuLoadFile" class="menu-item-btn">Hent Fil (JSON)...</button>
+                        <button type="button" id="btnMenuPrint" class="menu-item-btn">Print Dokumentation...</button>
                     </div>
                 </div>
             </div>
@@ -451,11 +472,11 @@ export function renderFittingInputs() {
 
         // SVGs omitted for brevity in this output, but should be here
         const splittingSvg = isBullhead
-            ? `<img src="/icons/tee_bullhead_splitting.svg" alt="T-stykke Splitting" style="max-width:100%; height:auto;">`
-            : `<img src="/icons/tee_splitting.svg" alt="T-stykke Splitting" style="max-width:100%; height:auto;">`;
+            ? `<img src="./public/icons/tee_bullhead_splitting.svg" alt="T-stykke Splitting" style="max-width:100%; height:auto;">`
+            : `<img src="./public/icons/tee_splitting.svg" alt="T-stykke Splitting" style="max-width:100%; height:auto;">`;
         const mergingSvg = isBullhead
-            ? `<img src="/icons/tee_bullhead_merging.svg" alt="T-stykke Merging" style="max-width:100%; height:auto;">`
-            : `<img src="/icons/tee_merging.svg" alt="T-stykke Merging" style="max-width:100%; height:auto;">`;
+            ? `<img src="./public/icons/tee_bullhead_merging.svg" alt="T-stykke Merging" style="max-width:100%; height:auto;">`
+            : `<img src="./public/icons/tee_merging.svg" alt="T-stykke Merging" style="max-width:100%; height:auto;">`;
 
         fittingInputsContainer.innerHTML = `
             <div class="input-group">
@@ -503,7 +524,7 @@ export function renderFittingInputs() {
     } else {
         switch (type) {
             case 'bend_circ':
-                illustrationSvg = `<img src="/icons/bend_circ.svg" alt="Cirkulær Bøjning" style="max-width:100%; height:auto;">`;
+                illustrationSvg = `<img src="./public/icons/bend_circ.svg" alt="Cirkulær Bøjning" style="max-width:100%; height:auto;">`;
                 inputsHtml = commonAirflowInput + `
                     <div class="input-field-group">
                         <div class="input-group"><label for="d">Diameter (d)</label><select id="d" class="input-field">${roundOptions}</select></div>
@@ -512,7 +533,7 @@ export function renderFittingInputs() {
                     </div>`;
                 break;
             case 'bend_rect':
-                illustrationSvg = `<img src="/icons/bend_rect.svg" alt="Rektangulær Bøjning" style="max-width:100%; height:auto;">`;
+                illustrationSvg = `<img src="./public/icons/bend_rect.svg" alt="Rektangulær Bøjning" style="max-width:100%; height:auto;">`;
                 inputsHtml = commonAirflowInput + `
                     <div class="input-field-group">
                         <div class="input-group"><label for="h">Højde (H)</label><select id="h" class="input-field">${rectOptions}</select></div>
@@ -522,7 +543,7 @@ export function renderFittingInputs() {
                     </div>`;
                 break;
             case 'expansion':
-                illustrationSvg = `<img src="/icons/expansion.svg" alt="Expansion" style="max-width:100%; height:auto;">`;
+                illustrationSvg = `<img src="./public/icons/expansion.svg" alt="Expansion" style="max-width:100%; height:auto;">`;
                 inputsHtml = commonAirflowInput + `
                     <div class="input-field-group">
                         <div class="input-group"><label for="d1">Diameter Ind (d₁)</label><select id="d1" class="input-field">${roundOptions}</select></div>
@@ -535,7 +556,7 @@ export function renderFittingInputs() {
                     <div id="geo_input_container"></div>`;
                 break;
             case 'contraction':
-                illustrationSvg = `<img src="/icons/contraction.svg" alt="Contraction" style="max-width:100%; height:auto;">`;
+                illustrationSvg = `<img src="./public/icons/contraction.svg" alt="Contraction" style="max-width:100%; height:auto;">`;
                 inputsHtml = commonAirflowInput + `
                     <div class="input-field-group">
                         <div class="input-group"><label for="d1">Diameter Ind (d₁)</label><select id="d1" class="input-field">${roundOptions}</select></div>
@@ -548,7 +569,7 @@ export function renderFittingInputs() {
                     <div id="geo_input_container"></div>`;
                 break;
             case 'expansion_rect':
-                illustrationSvg = `<img src="/icons/expansion_rect.svg" alt="Rektangulær Expansion" style="max-width:100%; height:auto;">`;
+                illustrationSvg = `<img src="./public/icons/expansion_rect.svg" alt="Rektangulær Expansion" style="max-width:100%; height:auto;">`;
                 inputsHtml = commonAirflowInput + `
                     <div class="input-field-group">
                         <div class="input-group"><label for="h1">Højde Ind (H₁)</label><select id="h1" class="input-field">${rectOptions}</select></div>
@@ -565,7 +586,7 @@ export function renderFittingInputs() {
                     <div id="geo_input_container"></div>`;
                 break;
             case 'contraction_rect':
-                illustrationSvg = `<img src="/icons/contraction_rect.svg" alt="Rektangulær Contraction" style="max-width:100%; height:auto;">`;
+                illustrationSvg = `<img src="./public/icons/contraction_rect.svg" alt="Rektangulær Contraction" style="max-width:100%; height:auto;">`;
                 inputsHtml = commonAirflowInput + `
                     <div class="input-field-group">
                         <div class="input-group"><label for="h1">Højde Ind (H₁)</label><select id="h1" class="input-field">${rectOptions}</select></div>
@@ -1013,3 +1034,64 @@ export function populateDatalists() {
     }
 }
 
+
+export function showConfirm(message, onConfirm) {
+    const modal = document.getElementById('confirmModal');
+    const msgEl = document.getElementById('confirmMessage');
+    const btnOk = document.getElementById('btnConfirmOk');
+    const btnCancel = document.getElementById('btnConfirmCancel');
+
+    if (!modal || !msgEl || !btnOk || !btnCancel) {
+        console.error('Confirm modal elements missing!');
+        return;
+    }
+
+    msgEl.textContent = message;
+    modal.classList.remove('hidden');
+
+    // Remove old listeners by cloning
+    const newBtnOk = btnOk.cloneNode(true);
+    const newBtnCancel = btnCancel.cloneNode(true);
+    btnOk.parentNode.replaceChild(newBtnOk, btnOk);
+    btnCancel.parentNode.replaceChild(newBtnCancel, btnCancel);
+
+    newBtnOk.addEventListener('click', () => {
+        modal.classList.add('hidden');
+        onConfirm();
+    });
+
+    newBtnCancel.addEventListener('click', () => {
+        modal.classList.add('hidden');
+    });
+}
+
+export function updateUndoRedoUI(canUndo, canRedo) {
+    const undoBtn = document.getElementById('undoButton');
+    const redoBtn = document.getElementById('redoButton');
+
+    if (undoBtn) undoBtn.disabled = !canUndo;
+    if (redoBtn) redoBtn.disabled = !canRedo;
+}
+
+let saveStatusTimeout;
+export function showSaveStatus(status, type = 'saved') {
+    const statusEl = document.getElementById('saveStatus');
+    if (!statusEl) return;
+
+    statusEl.textContent = status;
+    statusEl.className = 'save-status visible';
+
+    if (type === 'saving') {
+        statusEl.classList.add('saving');
+    }
+
+    // Clear previous timeout
+    if (saveStatusTimeout) clearTimeout(saveStatusTimeout);
+
+    // Auto-hide after 2 seconds if just "Saved"
+    if (type === 'saved') {
+        saveStatusTimeout = setTimeout(() => {
+            statusEl.classList.remove('visible');
+        }, 2000);
+    }
+}

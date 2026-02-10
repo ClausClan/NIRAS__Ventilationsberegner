@@ -35,7 +35,29 @@
                 </div>
 
                 <div class="header-controls">
+                    <div class="toolbar-group">
+                        <button id="undoButton" class="icon-button" title="Fortryd (Ctrl+Z)" disabled>
+                            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                                <path
+                                    d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z" />
+                            </svg>
+                        </button>
+                        <button id="redoButton" class="icon-button" title="Annuller fortryd (Ctrl+Y)" disabled>
+                            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                                <path
+                                    d="M18.4 10.6C16.55 9 14.15 8 11.5 8c-4.65 0-8.58 3.03-9.96 7.22L3.9 16c1.05-3.19 4.05-5.5 7.6-5.5 1.95 0 3.73.72 5.12 1.88L13 16h9V7l-3.6 3.6z" />
+                            </svg>
+                        </button>
+                    </div>
+                    <!--
+                    <button id="projectsButton" class="icon-button" title="Mine Projekter">
+                        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                            <path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/>
+                        </svg>
+                    </button>
+                    -->
                     <button id="helpButton" class="help-button" title="Hjælp & Info">?</button>
+                    <div id="saveStatus" class="save-status"></div>
                     <div class="theme-switch-wrapper">
                         <span class="theme-switch-label">Future Vibe</span>
                         <label class="theme-switch" for="themeToggle">
@@ -76,7 +98,7 @@
     </div>
 
     <!-- Modal for details -->
-    <div id="detailsModal" class="modal">
+    <div id="detailsModal" class="modal hidden">
         <div class="modal-content">
             <span class="close-modal"
                 onclick="document.getElementById('detailsModal').style.display='none'">&times;</span>
@@ -86,8 +108,20 @@
     </div>
 
     <!-- Modal for help -->
-    <div id="helpModal" class="modal">
+    <div id="helpModal" class="modal hidden">
         <!-- Content injected by ui.js -->
+    </div>
+
+    <!-- Modal for custom confirmation -->
+    <div id="confirmModal" class="modal hidden">
+        <div class="modal-content" style="max-width: 400px; text-align: center;">
+            <h3 style="margin-top: 0;">Bekræft handling</h3>
+            <p id="confirmMessage" style="margin: 20px 0; font-size: 16px;"></p>
+            <div style="display: flex; justify-content: center; gap: 15px; margin-top: 25px;">
+                <button id="btnConfirmCancel" class="button secondary">Annuller</button>
+                <button id="btnConfirmOk" class="button primary">OK</button>
+            </div>
+        </div>
     </div>
 
     <script type="module" src="./src/main.js"></script>
