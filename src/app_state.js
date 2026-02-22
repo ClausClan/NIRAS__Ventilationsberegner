@@ -30,6 +30,24 @@ class StateManager {
         };
     }
 
+    importState(importedState) {
+        this.resetState();
+        if (!importedState) return;
+
+        // Merge properties
+        Object.assign(this.state, importedState);
+
+        // Ensure graph structure exists (Backwards Compatibility for Pre-Phase-12 projects)
+        if (!this.state.graph || !this.state.graph.nodes) {
+            this.setSystemComponents(this.state.systemComponents || []);
+        }
+
+        this.history = [];
+        this.future = [];
+        this.persist();
+        this.notifyChange();
+    }
+
     // --- History Management ---
 
     saveState(actionDescription = 'State Change') {
@@ -136,24 +154,25 @@ class StateManager {
     }
 
     addSystemComponent(comp, parentId = null, parentPort = 'outlet', targetPort = 'inlet') {
-        console.log('StateManager: addSystemComponent (Graph) called', comp.name);
-        this.saveState(`Added component ${comp.name}`);
-
-        const graph = this.getGraph();
-        graph.nodes[comp.id] = comp;
-
-        // If no parentId is provided, and we have existing nodes, we try to append to the "last" one for linear compat.
-        if (!parentId && Object.keys(graph.nodes).length > 1) {
-            // Find a node that has no outgoing edges from its main outlet
-            const targetParentId = Object.keys(graph.nodes).find(id => {
-                const node = graph.nodes[id];
-                return id !== comp.id && !graph.edges.find(e => e.from === id && e.fromPort === 'outlet');
-            });
-            if (targetParentId) {
-                parentId = targetParentId;
-            }
+        if (!comp) {
+            console.error('StateManager: addSystemComponent called with null component');
+            return;
         }
 
+        console.log('StateManager: addSystemComponent (Graph) called', comp.name, 'parentId:', parentId);
+        this.saveState(`Added component ${comp.name}`);
+
+        // Default to included in calculation
+        if (comp.isIncluded === undefined) {
+            comp.isIncluded = true;
+        }
+
+        const graph = this.getGraph();
+
+        // Add the new node
+        graph.nodes[comp.id] = comp;
+
+        // Only create an edge if parentId is given AND it exists
         if (parentId && graph.nodes[parentId]) {
             graph.edges.push({
                 from: parentId,
@@ -244,38 +263,81 @@ class StateManager {
         const edges = graph.edges;
 
         let ordered = [];
-        let currentId = null;
+        const visited = new Set();
 
-        // Find start node (no incoming edges)
-        const startNodes = Object.keys(nodes).filter(id => !edges.find(e => e.to === id));
+        const traverse = (nodeId) => {
+            if (!visited.has(nodeId) && nodes[nodeId]) {
+                visited.add(nodeId);
+                ordered.push(nodes[nodeId]);
 
-        // If multiple starts, just pick the first one for the linear array representation.
-        // Ideally there's only one start node connected to the main topological path.
-        if (startNodes.length > 0) {
-            currentId = startNodes[0];
-        } else if (Object.keys(nodes).length > 0) {
-            currentId = Object.keys(nodes)[0]; // Fallback
-        }
+                // Follow all outgoing edges
+                const outgoingEdges = edges.filter(e => e.from === nodeId);
+                // Prefer main 'outlet' first
+                outgoingEdges.sort((a, b) => a.fromPort === 'outlet' ? -1 : 1).forEach(e => {
+                    traverse(e.to);
+                });
+            }
+        };
 
-        while (currentId && nodes[currentId]) {
-            ordered.push(nodes[currentId]);
-            // Follow the 'outlet' edge to simulate linear path
-            const nextEdge = edges.find(e => e.from === currentId && e.fromPort === 'outlet');
-            currentId = nextEdge ? nextEdge.to : null;
+        // Find root nodes (no incoming edges)
+        const rootNodes = Object.keys(nodes).filter(id => !edges.find(e => e.to === id));
+        rootNodes.forEach(id => traverse(id));
 
-            // Prevent infinite loops safely
-            if (ordered.length > Object.keys(nodes).length) break;
-        }
-
-        // Add any remaining nodes that aren't on the main path just so they exist in the array
-        const mainPathIds = new Set(ordered.map(n => n.id));
+        // Add any remaining disconnected stranded nodes
         for (const id in nodes) {
-            if (!mainPathIds.has(id)) {
-                ordered.push(nodes[id]);
+            if (!visited.has(id)) {
+                traverse(id);
             }
         }
 
         this.state.systemComponents = ordered;
+    }
+
+    // Build a nested tree representation of the graph
+    getSystemTree() {
+        const graph = this.getGraph();
+        const nodes = graph.nodes;
+        const edges = graph.edges;
+        const visited = new Set();
+
+        const buildTree = (nodeId) => {
+            if (visited.has(nodeId)) return null; // Avoid cycles
+            const node = nodes[nodeId];
+            if (!node) return null;
+
+            visited.add(nodeId);
+            const treeNode = { ...node, children: {} };
+
+            // Find all outgoing edges from this node
+            const outgoingEdges = edges.filter(e => e.from === nodeId);
+
+            // For each edge, attach the child to the corresponding port
+            outgoingEdges.forEach(edge => {
+                const childTree = buildTree(edge.to);
+                if (childTree) {
+                    if (!treeNode.children[edge.fromPort]) {
+                        treeNode.children[edge.fromPort] = [];
+                    }
+                    treeNode.children[edge.fromPort].push(childTree);
+                }
+            });
+
+            return treeNode;
+        };
+
+        // Find root nodes (no incoming edges)
+        const roots = Object.keys(nodes).filter(id => !edges.find(e => e.to === id));
+        let treeRoots = roots.map(rootId => buildTree(rootId)).filter(Boolean);
+
+        // Append any stranded nodes that were not reached as additional roots
+        for (const id in nodes) {
+            if (!visited.has(id)) {
+                let strandedTree = buildTree(id);
+                if (strandedTree) treeRoots.push(strandedTree);
+            }
+        }
+
+        return treeRoots;
     }
 
     // System Components (Legacy array accessors) - keeping interface identical to not break UI instantly

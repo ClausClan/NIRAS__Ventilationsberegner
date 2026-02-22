@@ -279,3 +279,22 @@ export function calculateTemperatureDrop(t_in, t_amb, L, perimeter, q_m, isoThic
 
     return { t_out, U, q_loss };
 }
+
+/**
+ * Compares two dimension objects for equality.
+ * Handles both round {shape: 'round', d: 250} and rectangular {shape: 'rectangular', w: 300, h: 200}
+ */
+export function areDimensionsEqual(dim1, dim2) {
+    if (!dim1 || !dim2) return false;
+    if (dim1.shape !== dim2.shape) return false;
+
+    if (dim1.shape === 'round') {
+        return parseFloat(dim1.d) === parseFloat(dim2.d);
+    } else if (dim1.shape === 'rectangular') {
+        // Allow for rotated rectangular ducts (wxh == hxw) optionally, 
+        // but for transitioning strict check is usually safer.
+        return (parseFloat(dim1.w) === parseFloat(dim2.w) && parseFloat(dim1.h) === parseFloat(dim2.h)) ||
+            (parseFloat(dim1.w) === parseFloat(dim2.h) && parseFloat(dim1.h) === parseFloat(dim2.w));
+    }
+    return false;
+}

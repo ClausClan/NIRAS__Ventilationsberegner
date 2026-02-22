@@ -1,21 +1,16 @@
 // Main application logic - Cache Bust 1
-import { parseLocalFloat, getInternalDim, formatLocalFloat } from './utils.js';
-import * as physics from './physics.js';
-import * as ui from './ui.js';
-import {
-    getDimFormHtml, getFittingsFormHtml, getProjectModalHtml, getSystemFormHtml,
-    renderDuctResult, renderFittingsResult, renderSystem,
-    showDuctDetails, showFittingDetails, showSystemComponentDetails, showHelpModal,
-    updateFittingTypeOptions, renderFittingInputs, handleComponentTypeChange, renderSystemFittingInputs,
-    toggleSystemMenu, printDocumentation, updateDimUI, updateConstraintDefaults, populateDatalists, showConfirm, updateUndoRedoUI, showSaveStatus,
-    showEditForm
-} from './ui.js';
+import { parseLocalFloat, getInternalDim, formatLocalFloat } from './utils.js?v=3';
+import * as physics from './physics.js?v=3';
+import * as diagram from './diagram.js?v=3';
+import * as ui from './ui.js?v=3';
 
 import {
     addSystemComponent, deleteSystemComponent,
     undo, redo,
     updateSystemComponent, stateManager, removeFitting, resetFittings, getSystemComponents, removeLastSystemComponent, clearSystem, setSystemComponents, getSystemComponent, canUndo, canRedo, addFitting, getCorrectionTargetId, setCorrectionTargetId, setDuctResult
 } from './app_state.js';
+window.stateManager = stateManager;
+window.setCorrectionTargetId = setCorrectionTargetId;
 import { projectManager } from './projects.js';
 import { toggleDiagramView, renderDiagram } from './diagram.js';
 
@@ -90,16 +85,16 @@ window.handleDeleteLastComponent = () => {
 };
 
 window.handleDeleteComponent = (id) => {
-    showConfirm("Er du sikker på, at du vil slette denne komponent? Dette kan påvirke efterfølgende beregninger.", () => {
+    ui.showConfirm("Er du sikker på, at du vil slette denne komponent? Dette kan påvirke efterfølgende beregninger.", () => {
         deleteSystemComponent(id);
         recalculateSystem(); // Recalculate transitions after deletion
-        updateUndoRedoUI(canUndo(), canRedo()); // Antager undo er mulig efter slet
-        showSaveStatus('Ændringer gemt');
+        ui.updateUndoRedoUI(canUndo(), canRedo()); // Antager undo er mulig efter slet
+        ui.showSaveStatus('Ændringer gemt', 'saved');
     });
 };
 
 window.handleEditComponent = (id) => {
-    showEditForm(id);
+    ui.showEditForm(id);
 };
 
 window.handleUpdateComponent = (id) => {
@@ -607,12 +602,18 @@ function getFittingData(suffix, typeOverride = null) {
 
     let name, details, properties = { type: fittingType };
 
-    const s = (id) => document.getElementById(id + suffix).value;
+    const s = (id) => {
+        const el = document.getElementById(id + suffix);
+        return el ? el.value : '';
+    };
     const f = (id) => parseLocalFloat(s(id));
     const radio = (n) => {
         const el = document.querySelector(`input[name="${n}${suffix}"]:checked`);
         return el ? el.value : null;
     };
+
+    const orientation = s('sys_orientation');
+    if (orientation) properties.orientation = orientation;
 
     switch (fittingType) {
         case 'bend_circ': {
@@ -701,21 +702,269 @@ function getFittingData(suffix, typeOverride = null) {
 }
 
 
+function calculateComponentPhysics(component, incomingFlow, incomingTemp, incomingDim, globalParams) {
+    const { RHO, NU, globalAmbient, systemTemp } = globalParams;
+    let newCalc = {};
+    const q_m = incomingFlow * RHO / 3600; // kg/s
+    const p = component.properties;
+    const compAmbient = p.ambientTemp !== undefined ? p.ambientTemp : globalParams.globalAmbient;
+    const isoThick = p.isoThick ? p.isoThick / 1000 : 0; // standard to meters
+    const isoLambda = p.isoLambda || 0.037;
+
+    let t_out_val = incomingTemp;
+    let q_loss_val = 0;
+
+    // --- 1. Calculate Component Physics based on properties and incoming flow ---
+    if (component.type === 'straightDuct') {
+        const Q = incomingFlow / 3600;
+        let performance, inletDim, outletDim, perimeter;
+
+        if (p.shape === 'round') {
+            inletDim = outletDim = { shape: 'round', d: p.diameter };
+            performance = physics.getPerformance(Q, p.diameter / 1000, { shape: 'round', a: p.diameter }, RHO, NU);
+            perimeter = Math.PI * (p.diameter / 1000);
+        } else {
+            inletDim = outletDim = { shape: 'rect', h: p.sideA, w: p.sideB };
+            performance = physics.getPerformance(Q, 0, { shape: 'rect', a: p.sideA, b: p.sideB }, RHO, NU);
+            perimeter = 2 * ((p.sideA / 1000) + (p.sideB / 1000));
+        }
+
+        const thermo = physics.calculateTemperatureDrop(incomingTemp, compAmbient, p.length, perimeter, q_m, isoThick, isoLambda);
+        t_out_val = thermo.t_out;
+        q_loss_val = thermo.q_loss;
+
+        newCalc = {
+            airflow_in: incomingFlow,
+            airflow_out: { 'outlet': incomingFlow },
+            velocity: performance.velocity,
+            pressureLoss: performance.pressureDrop * p.length,
+            zeta: null,
+            inletDimension: inletDim,
+            outletDimension: { 'outlet': outletDim },
+            calculationDetails: performance,
+            temperature_in: incomingTemp,
+            temperature_out: { 'outlet': t_out_val },
+            heatLoss: q_loss_val
+        };
+    } else if (component.type === 'manualLoss') {
+        const inletDim = incomingDim || { shape: 'round', d: 0 };
+        newCalc = {
+            airflow_in: incomingFlow,
+            airflow_out: { 'outlet': incomingFlow },
+            velocity: null,
+            pressureLoss: p.pressureLoss,
+            zeta: null,
+            inletDimension: inletDim,
+            outletDimension: { 'outlet': inletDim },
+            calculationDetails: null,
+            temperature_in: incomingTemp,
+            temperature_out: { 'outlet': t_out_val },
+            heatLoss: 0
+        };
+    } else {
+        const Q = incomingFlow / 3600;
+        let inletDim, outletDim, v, zeta = 0, Pdyn_Pa = 0, A = 0, pressureLoss = 0, airflow_out = {}, temp_out = {};
+        let calculationDetails = {};
+        let q_loss_val = 0;
+
+        if (p.type === 'bend_circ') {
+            inletDim = outletDim = { shape: 'round', d: p.d };
+            const rd_key = p.rd < 1.25 ? "rd1_0" : "rd1_5";
+            zeta = physics.interpolateValue(p.angle, p.d, physics.CIRCULAR_BEND_ZETA[rd_key]);
+            A = Math.PI * (getInternalDim(p.d) / 2000) ** 2;
+            v = Q / A;
+            Pdyn_Pa = (RHO / 2) * v ** 2;
+            pressureLoss = zeta * Pdyn_Pa;
+            airflow_out = { 'outlet': incomingFlow };
+
+            const L_eff = 2 * Math.PI * (p.rd * p.d / 1000) * (p.angle / 360);
+            const perim_eff = Math.PI * (p.d / 1000);
+            const thermo = physics.calculateTemperatureDrop(incomingTemp, compAmbient, L_eff, perim_eff, q_m, isoThick, isoLambda);
+            temp_out = { 'outlet': thermo.t_out };
+            q_loss_val = thermo.q_loss;
+
+            calculationDetails = { A_m2: A, v_ms: v, zeta, Pdyn_Pa };
+        } else if (p.type === 'bend_rect') {
+            inletDim = outletDim = { shape: 'rect', h: p.h, w: p.w };
+            const hw_ratio = p.h / p.w;
+            const zeta_base = physics.interpolateValue(hw_ratio, p.rh, physics.RECTANGULAR_BEND_ZETA.mainTable);
+            const k_factor = physics.interpolateValue(p.angle, null, physics.RECTANGULAR_BEND_ZETA.kFactor);
+            zeta = zeta_base * k_factor;
+            let h_int = getInternalDim(p.h) / 1000, w_int = getInternalDim(p.w) / 1000;
+            A = h_int * w_int;
+            v = Q / A;
+            Pdyn_Pa = (RHO / 2) * v ** 2;
+            pressureLoss = zeta * Pdyn_Pa;
+            airflow_out = { 'outlet': incomingFlow };
+
+            const L_eff = 2 * Math.PI * (p.rh * p.w / 1000) * (p.angle / 360);
+            const perim_eff = 2 * (p.w / 1000 + p.h / 1000);
+            const thermo = physics.calculateTemperatureDrop(incomingTemp, compAmbient, L_eff, perim_eff, q_m, isoThick, isoLambda);
+            temp_out = { 'outlet': thermo.t_out };
+            q_loss_val = thermo.q_loss;
+
+            calculationDetails = { A_m2: A, v_ms: v, zeta, Pdyn_Pa };
+        } else if (p.type === 'expansion' || p.type === 'contraction') {
+            const isExpansion = p.type === 'expansion';
+            inletDim = { shape: 'round', d: p.d1 };
+            outletDim = { shape: 'round', d: p.d2 };
+            const A1 = Math.PI * (getInternalDim(p.d1) / 2000) ** 2;
+            const A2 = Math.PI * (getInternalDim(p.d2) / 2000) ** 2;
+            const area_ratio = A2 / A1;
+            const zeta_table = isExpansion ? physics.EXPANSION_ZETA : physics.CONTRACTION_ZETA;
+            zeta = physics.interpolateValue(p.angle, area_ratio, zeta_table);
+            A = isExpansion ? A1 : A2;
+            v = Q / A;
+            Pdyn_Pa = (RHO / 2) * v ** 2;
+            pressureLoss = zeta * Pdyn_Pa;
+            airflow_out = { 'outlet': incomingFlow };
+
+            const d1 = p.d1 / 1000, d2 = p.d2 / 1000;
+            const angleRad = (p.angle || 15) * Math.PI / 180;
+            let L_eff = Math.abs(d1 - d2) / 2 / Math.tan(angleRad / 2);
+            if (L_eff < 0.1 || isNaN(L_eff)) L_eff = 0.3;
+            const perim_eff = Math.PI * (d1 + d2) / 2;
+            const thermo = physics.calculateTemperatureDrop(incomingTemp, compAmbient, L_eff, perim_eff, q_m, isoThick, isoLambda);
+            temp_out = { 'outlet': thermo.t_out };
+            q_loss_val = thermo.q_loss;
+
+            calculationDetails = { A_m2: A, v_ms: v, zeta, Pdyn_Pa };
+        } else if (p.type === 'tee_sym' || p.type === 'tee_asym') {
+            inletDim = { shape: 'round', d: p.d_in };
+
+            const L_in = p.d_in / 1000;
+            const perim_in = Math.PI * L_in;
+            const L_st = p.d_straight / 1000;
+            const perim_st = Math.PI * L_st;
+            const L_br = p.d_branch / 1000;
+            const perim_br = Math.PI * L_br;
+
+            if (p.flowType === 'splitting') {
+                // Stage 1: Inlet body
+                const thermo_in = physics.calculateTemperatureDrop(incomingTemp, compAmbient, L_in, perim_in, q_m, isoThick, isoLambda);
+                const t_mid = thermo_in.t_out;
+                let totalLoss = thermo_in.q_loss;
+
+                // Stage 2: Straight branch
+                const q_m_st = (p.q_straight / 3600) * RHO;
+                const thermo_st = physics.calculateTemperatureDrop(t_mid, compAmbient, L_st, perim_st, q_m_st, isoThick, isoLambda);
+                totalLoss += thermo_st.q_loss;
+
+                // Stage 3: Angled branch
+                const q_m_br = (p.q_branch / 3600) * RHO;
+                const thermo_br = physics.calculateTemperatureDrop(t_mid, compAmbient, L_br, perim_br, q_m_br, isoThick, isoLambda);
+                totalLoss += thermo_br.q_loss;
+
+                q_loss_val = totalLoss;
+
+                const results = physics.calculateTeePressureLoss({ q_in: incomingFlow, q_straight: p.q_straight, q_branch: p.q_branch }, { d_in: p.d_in, d_straight: p.d_straight, d_branch: p.d_branch }, RHO);
+                if (p.path === 'straight') {
+                    pressureLoss = results.loss_straight;
+                    outletDim = { shape: 'round', d: p.d_straight };
+                    airflow_out = { 'outlet_straight': p.q_straight, 'outlet_branch': p.q_branch, 'outlet': p.q_straight };
+                    temp_out = { 'outlet_straight': thermo_st.t_out, 'outlet_branch': thermo_br.t_out, 'outlet': thermo_st.t_out };
+                    calculationDetails = results.details_straight;
+                } else {
+                    pressureLoss = results.loss_branch;
+                    outletDim = { shape: 'round', d: p.d_branch };
+                    airflow_out = { 'outlet_straight': p.q_straight, 'outlet_branch': p.q_branch, 'outlet': p.q_branch };
+                    temp_out = { 'outlet_straight': thermo_st.t_out, 'outlet_branch': thermo_br.t_out, 'outlet': thermo_br.t_out };
+                    calculationDetails = results.details_branch;
+                }
+            } else { // Merging
+                // Air coming from the current sequence path receives incomingTemp, new added air starts at global temp
+                const t_in_st = (p.path === 'straight') ? incomingTemp : globalParams.systemTemp;
+                const t_in_br = (p.path === 'branch') ? incomingTemp : globalParams.systemTemp;
+
+                // Calculate local density for accurate mass flow
+                const rho_st = physics.getAirProperties(t_in_st).RHO;
+                const rho_br = physics.getAirProperties(t_in_br).RHO;
+
+                // Stage 1/2: Inlets
+                const q_m_st = (p.q_straight / 3600) * rho_st;
+                const thermo_st = physics.calculateTemperatureDrop(t_in_st, compAmbient, L_st, perim_st, q_m_st, isoThick, isoLambda);
+
+                const q_m_br = (p.q_branch / 3600) * rho_br;
+                const thermo_br = physics.calculateTemperatureDrop(t_in_br, compAmbient, L_br, perim_br, q_m_br, isoThick, isoLambda);
+
+                // Mix at mid (Mass-weighted temperature average)
+                const q_m_total = q_m_st + q_m_br;
+                const t_mixed = q_m_total > 0 ? ((q_m_st * thermo_st.t_out + q_m_br * thermo_br.t_out) / q_m_total) : incomingTemp;
+
+                // Stage 3: Outlet body
+                const thermo_out = physics.calculateTemperatureDrop(t_mixed, compAmbient, L_in, perim_in, q_m, isoThick, isoLambda);
+
+                q_loss_val = thermo_st.q_loss + thermo_br.q_loss + thermo_out.q_loss;
+
+                const results = physics.calculateConvergingTeePressureLoss({ q_straight: p.q_straight, q_branch: p.q_branch }, { d_common: p.d_in, d_straight: p.d_straight, d_branch: p.d_branch }, RHO);
+                if (p.path === 'straight') {
+                    pressureLoss = results.loss_straight;
+                    calculationDetails = results.details_straight;
+                    inletDim = { shape: 'round', d: p.d_straight };
+                } else {
+                    pressureLoss = results.loss_branch;
+                    calculationDetails = results.details_branch;
+                    inletDim = { shape: 'round', d: p.d_branch };
+                }
+                outletDim = { shape: 'round', d: p.d_in };
+                airflow_out = { 'outlet': results.q_out };
+                temp_out = { 'outlet': thermo_out.t_out }; // Linear assumption: branches didn't cool differently yet
+            }
+            v = calculationDetails.v_ms || 0;
+        }
+
+        newCalc = {
+            airflow_in: incomingFlow,
+            airflow_out: airflow_out,
+            velocity: v,
+            pressureLoss: pressureLoss,
+            zeta: zeta,
+            inletDimension: inletDim,
+            outletDimension: { 'outlet': outletDim },
+            calculationDetails: calculationDetails,
+            temperature_in: incomingTemp,
+            temperature_out: temp_out,
+            heatLoss: q_loss_val
+        };
+    }
+
+
+    return newCalc;
+}
+
 // Function to recalculate the entire system chain based on Graph Topology
 function recalculateSystem() {
     const graph = stateManager.getGraph();
-    // Filter out auto-generated components to get the "user intent" list
-    // In a pure graph, we'd traverse and remove transition nodes first
-    const userComponents = Object.values(graph.nodes)
-        .filter(c => !c.isAutoGenerated)
-        // Rough topological sort for now (linear)
-        .sort((a, b) => {
-            // VERY naive sort based on ID for now to maintain order
-            return a.id.localeCompare(b.id);
-        });
+    const userNodes = {};
+    const originalEdges = [...graph.edges];
 
-    // Reset graph to rebuild with transitions
-    stateManager.clearSystem();
+    Object.values(graph.nodes).forEach(n => {
+        if (!n.isAutoGenerated) userNodes[n.id] = { ...n };
+    });
+
+    // We must rebuild userEdges by 'jumping over' any transition nodes
+    const userEdges = [];
+    Object.values(userNodes).forEach(un => {
+        const outEdges = originalEdges.filter(e => e.from === un.id);
+        outEdges.forEach(e => {
+            let currentEdge = e;
+            while (currentEdge) {
+                const nextNode = graph.nodes[currentEdge.to];
+                if (!nextNode) break;
+                if (!nextNode.isAutoGenerated) {
+                    userEdges.push({
+                        from: un.id,
+                        fromPort: e.fromPort,
+                        to: nextNode.id,
+                        toPort: currentEdge.toPort
+                    });
+                    break;
+                }
+                // It's a transition node. Follow its outlet.
+                currentEdge = originalEdges.find(nextE => nextE.from === nextNode.id && nextE.fromPort === 'outlet');
+            }
+        });
+    });
 
     // Safety check for UI elements
     const flowTypeEl = document.querySelector('input[name="systemFlowType"]:checked');
@@ -731,267 +980,78 @@ function recalculateSystem() {
     const globalAmbient = ambEl ? parseLocalFloat(ambEl.value) : 20;
 
     const { RHO, NU } = physics.getAirProperties(temp);
+    const globalParams = { globalFlowType, globalAmbient, RHO, NU, systemTemp: temp };
 
-    let currentAirflow = startAirflow;
-    let currentTemp = temp;
-    let lastOutlet = null;
-    let lastNodeId = null;
+    // Reset graph to rebuild with transitions
+    stateManager.clearSystem();
 
-    userComponents.forEach((component, index) => {
-        let incomingFlow = currentAirflow;
-        let incomingTemp = currentTemp;
+    function traverseAndCalculate(nodeId, incomingFlow, incomingTemp, incomingDim, parentId, parentPort) {
+        const comp = userNodes[nodeId];
+        if (!comp) return;
 
-        let newCalc = {};
+        // If not included, flow is 0, but we still traverse so the subgraph exists
+        const activeFlow = comp.isIncluded === false ? 0 : incomingFlow;
 
-        const q_m = incomingFlow * RHO / 3600; // kg/s
-        const p = component.properties;
-        const compAmbient = p.ambientTemp !== undefined ? p.ambientTemp : globalAmbient;
-        const isoThick = p.isoThick ? p.isoThick / 1000 : 0; // standard to meters
-        const isoLambda = p.isoLambda || 0.037;
+        // Calculate Physics
+        let newCalc = calculateComponentPhysics(comp, activeFlow, incomingTemp, incomingDim, globalParams);
+        comp.state = newCalc;
 
-        let t_out_val = incomingTemp;
-        let q_loss_val = 0;
+        let currentParentId = parentId;
+        let currentParentPort = parentPort;
 
-        // --- 1. Calculate Component Physics based on properties and incoming flow ---
-        if (component.type === 'straightDuct') {
-            const Q = incomingFlow / 3600;
-            let performance, inletDim, outletDim, perimeter;
-
-            if (p.shape === 'round') {
-                inletDim = outletDim = { shape: 'round', d: p.diameter };
-                performance = physics.getPerformance(Q, p.diameter / 1000, { shape: 'round', a: p.diameter }, RHO, NU);
-                perimeter = Math.PI * (p.diameter / 1000);
-            } else {
-                inletDim = outletDim = { shape: 'rect', h: p.sideA, w: p.sideB };
-                performance = physics.getPerformance(Q, 0, { shape: 'rect', a: p.sideA, b: p.sideB }, RHO, NU);
-                perimeter = 2 * ((p.sideA / 1000) + (p.sideB / 1000));
-            }
-
-            const thermo = physics.calculateTemperatureDrop(incomingTemp, compAmbient, p.length, perimeter, q_m, isoThick, isoLambda);
-            t_out_val = thermo.t_out;
-            q_loss_val = thermo.q_loss;
-
-            newCalc = {
-                airflow_in: incomingFlow,
-                airflow_out: { 'outlet': incomingFlow },
-                velocity: performance.velocity,
-                pressureLoss: performance.pressureDrop * p.length,
-                zeta: null,
-                inletDimension: inletDim,
-                outletDimension: { 'outlet': outletDim },
-                calculationDetails: performance,
-                temperature_in: incomingTemp,
-                temperature_out: { 'outlet': t_out_val },
-                heatLoss: q_loss_val
-            };
-        } else if (component.type === 'manualLoss') {
-            const inletDim = lastOutlet || { shape: 'round', d: 0 };
-            newCalc = {
-                airflow_in: incomingFlow,
-                airflow_out: { 'outlet': incomingFlow },
-                velocity: null,
-                pressureLoss: p.pressureLoss,
-                zeta: null,
-                inletDimension: inletDim,
-                outletDimension: { 'outlet': inletDim },
-                calculationDetails: null,
-                temperature_in: incomingTemp,
-                temperature_out: { 'outlet': t_out_val },
-                heatLoss: 0
-            };
-        } else {
-            const Q = incomingFlow / 3600;
-            let inletDim, outletDim, v, zeta = 0, Pdyn_Pa = 0, A = 0, pressureLoss = 0, airflow_out = {}, temp_out = {};
-            let calculationDetails = {};
-            let q_loss_val = 0;
-
-            if (p.type === 'bend_circ') {
-                inletDim = outletDim = { shape: 'round', d: p.d };
-                const rd_key = p.rd < 1.25 ? "rd1_0" : "rd1_5";
-                zeta = physics.interpolateValue(p.angle, p.d, physics.CIRCULAR_BEND_ZETA[rd_key]);
-                A = Math.PI * (getInternalDim(p.d) / 2000) ** 2;
-                v = Q / A;
-                Pdyn_Pa = (RHO / 2) * v ** 2;
-                pressureLoss = zeta * Pdyn_Pa;
-                airflow_out = { 'outlet': incomingFlow };
-
-                const L_eff = 2 * Math.PI * (p.rd * p.d / 1000) * (p.angle / 360);
-                const perim_eff = Math.PI * (p.d / 1000);
-                const thermo = physics.calculateTemperatureDrop(incomingTemp, compAmbient, L_eff, perim_eff, q_m, isoThick, isoLambda);
-                temp_out = { 'outlet': thermo.t_out };
-                q_loss_val = thermo.q_loss;
-
-                calculationDetails = { A_m2: A, v_ms: v, zeta, Pdyn_Pa };
-            } else if (p.type === 'bend_rect') {
-                inletDim = outletDim = { shape: 'rect', h: p.h, w: p.w };
-                const hw_ratio = p.h / p.w;
-                const zeta_base = physics.interpolateValue(hw_ratio, p.rh, physics.RECTANGULAR_BEND_ZETA.mainTable);
-                const k_factor = physics.interpolateValue(p.angle, null, physics.RECTANGULAR_BEND_ZETA.kFactor);
-                zeta = zeta_base * k_factor;
-                let h_int = getInternalDim(p.h) / 1000, w_int = getInternalDim(p.w) / 1000;
-                A = h_int * w_int;
-                v = Q / A;
-                Pdyn_Pa = (RHO / 2) * v ** 2;
-                pressureLoss = zeta * Pdyn_Pa;
-                airflow_out = { 'outlet': incomingFlow };
-
-                const L_eff = 2 * Math.PI * (p.rh * p.w / 1000) * (p.angle / 360);
-                const perim_eff = 2 * (p.w / 1000 + p.h / 1000);
-                const thermo = physics.calculateTemperatureDrop(incomingTemp, compAmbient, L_eff, perim_eff, q_m, isoThick, isoLambda);
-                temp_out = { 'outlet': thermo.t_out };
-                q_loss_val = thermo.q_loss;
-
-                calculationDetails = { A_m2: A, v_ms: v, zeta, Pdyn_Pa };
-            } else if (p.type === 'expansion' || p.type === 'contraction') {
-                const isExpansion = p.type === 'expansion';
-                inletDim = { shape: 'round', d: p.d1 };
-                outletDim = { shape: 'round', d: p.d2 };
-                const A1 = Math.PI * (getInternalDim(p.d1) / 2000) ** 2;
-                const A2 = Math.PI * (getInternalDim(p.d2) / 2000) ** 2;
-                const area_ratio = A2 / A1;
-                const zeta_table = isExpansion ? physics.EXPANSION_ZETA : physics.CONTRACTION_ZETA;
-                zeta = physics.interpolateValue(p.angle, area_ratio, zeta_table);
-                A = isExpansion ? A1 : A2;
-                v = Q / A;
-                Pdyn_Pa = (RHO / 2) * v ** 2;
-                pressureLoss = zeta * Pdyn_Pa;
-                airflow_out = { 'outlet': incomingFlow };
-
-                const d1 = p.d1 / 1000, d2 = p.d2 / 1000;
-                const angleRad = (p.angle || 15) * Math.PI / 180;
-                let L_eff = Math.abs(d1 - d2) / 2 / Math.tan(angleRad / 2);
-                if (L_eff < 0.1 || isNaN(L_eff)) L_eff = 0.3;
-                const perim_eff = Math.PI * (d1 + d2) / 2;
-                const thermo = physics.calculateTemperatureDrop(incomingTemp, compAmbient, L_eff, perim_eff, q_m, isoThick, isoLambda);
-                temp_out = { 'outlet': thermo.t_out };
-                q_loss_val = thermo.q_loss;
-
-                calculationDetails = { A_m2: A, v_ms: v, zeta, Pdyn_Pa };
-            } else if (p.type === 'tee_sym' || p.type === 'tee_asym') {
-                inletDim = { shape: 'round', d: p.d_in };
-
-                const L_in = p.d_in / 1000;
-                const perim_in = Math.PI * L_in;
-                const L_st = p.d_straight / 1000;
-                const perim_st = Math.PI * L_st;
-                const L_br = p.d_branch / 1000;
-                const perim_br = Math.PI * L_br;
-
-                if (p.flowType === 'splitting') {
-                    // Stage 1: Inlet body
-                    const thermo_in = physics.calculateTemperatureDrop(incomingTemp, compAmbient, L_in, perim_in, q_m, isoThick, isoLambda);
-                    const t_mid = thermo_in.t_out;
-                    let totalLoss = thermo_in.q_loss;
-
-                    // Stage 2: Straight branch
-                    const q_m_st = (p.q_straight / 3600) * RHO;
-                    const thermo_st = physics.calculateTemperatureDrop(t_mid, compAmbient, L_st, perim_st, q_m_st, isoThick, isoLambda);
-                    totalLoss += thermo_st.q_loss;
-
-                    // Stage 3: Angled branch
-                    const q_m_br = (p.q_branch / 3600) * RHO;
-                    const thermo_br = physics.calculateTemperatureDrop(t_mid, compAmbient, L_br, perim_br, q_m_br, isoThick, isoLambda);
-                    totalLoss += thermo_br.q_loss;
-
-                    q_loss_val = totalLoss;
-
-                    const results = physics.calculateTeePressureLoss({ q_in: incomingFlow, q_straight: p.q_straight, q_branch: p.q_branch }, { d_in: p.d_in, d_straight: p.d_straight, d_branch: p.d_branch }, RHO);
-                    if (p.path === 'straight') {
-                        pressureLoss = results.loss_straight;
-                        outletDim = { shape: 'round', d: p.d_straight };
-                        airflow_out = { 'outlet_straight': p.q_straight, 'outlet_branch': p.q_branch, 'outlet': p.q_straight };
-                        temp_out = { 'outlet_straight': thermo_st.t_out, 'outlet_branch': thermo_br.t_out, 'outlet': thermo_st.t_out };
-                        calculationDetails = results.details_straight;
-                    } else {
-                        pressureLoss = results.loss_branch;
-                        outletDim = { shape: 'round', d: p.d_branch };
-                        airflow_out = { 'outlet_straight': p.q_straight, 'outlet_branch': p.q_branch, 'outlet': p.q_branch };
-                        temp_out = { 'outlet_straight': thermo_st.t_out, 'outlet_branch': thermo_br.t_out, 'outlet': thermo_br.t_out };
-                        calculationDetails = results.details_branch;
-                    }
-                } else { // Merging
-                    // Air coming from the current sequence path receives incomingTemp, new added air starts at global temp
-                    const t_in_st = (p.path === 'straight') ? incomingTemp : temp;
-                    const t_in_br = (p.path === 'branch') ? incomingTemp : temp;
-
-                    // Calculate local density for accurate mass flow
-                    const rho_st = physics.getAirProperties(t_in_st).RHO;
-                    const rho_br = physics.getAirProperties(t_in_br).RHO;
-
-                    // Stage 1/2: Inlets
-                    const q_m_st = (p.q_straight / 3600) * rho_st;
-                    const thermo_st = physics.calculateTemperatureDrop(t_in_st, compAmbient, L_st, perim_st, q_m_st, isoThick, isoLambda);
-
-                    const q_m_br = (p.q_branch / 3600) * rho_br;
-                    const thermo_br = physics.calculateTemperatureDrop(t_in_br, compAmbient, L_br, perim_br, q_m_br, isoThick, isoLambda);
-
-                    // Mix at mid (Mass-weighted temperature average)
-                    const q_m_total = q_m_st + q_m_br;
-                    const t_mixed = q_m_total > 0 ? ((q_m_st * thermo_st.t_out + q_m_br * thermo_br.t_out) / q_m_total) : incomingTemp;
-
-                    // Stage 3: Outlet body
-                    const thermo_out = physics.calculateTemperatureDrop(t_mixed, compAmbient, L_in, perim_in, q_m, isoThick, isoLambda);
-
-                    q_loss_val = thermo_st.q_loss + thermo_br.q_loss + thermo_out.q_loss;
-
-                    const results = physics.calculateConvergingTeePressureLoss({ q_straight: p.q_straight, q_branch: p.q_branch }, { d_common: p.d_in, d_straight: p.d_straight, d_branch: p.d_branch }, RHO);
-                    if (p.path === 'straight') {
-                        pressureLoss = results.loss_straight;
-                        calculationDetails = results.details_straight;
-                        inletDim = { shape: 'round', d: p.d_straight };
-                    } else {
-                        pressureLoss = results.loss_branch;
-                        calculationDetails = results.details_branch;
-                        inletDim = { shape: 'round', d: p.d_branch };
-                    }
-                    outletDim = { shape: 'round', d: p.d_in };
-                    airflow_out = { 'outlet': results.q_out };
-                    temp_out = { 'outlet': thermo_out.t_out }; // Linear assumption: branches didn't cool differently yet
-                }
-                v = calculationDetails.v_ms || 0;
-            }
-
-            newCalc = {
-                airflow_in: incomingFlow,
-                airflow_out: airflow_out,
-                velocity: v,
-                pressureLoss: pressureLoss,
-                zeta: zeta,
-                inletDimension: inletDim,
-                outletDimension: { 'outlet': outletDim },
-                calculationDetails: calculationDetails,
-                temperature_in: incomingTemp,
-                temperature_out: temp_out,
-                heatLoss: q_loss_val
-            };
-        }
-
-        // Apply calculated state
-        component.state = newCalc;
-
-        // --- 2. Check and Insert Transitions ---
-        if (index > 0 && lastOutlet) {
-            const transition = createTransitionComponent(lastOutlet, component.state.inletDimension, incomingFlow, globalFlowType, null);
+        // Check and Insert Transitions
+        if (incomingDim && newCalc.inletDimension && !physics.areDimensionsEqual(incomingDim, newCalc.inletDimension)) {
+            const transition = createTransitionComponent(incomingDim, newCalc.inletDimension, activeFlow, globalParams.globalFlowType, null);
             if (transition) {
-                stateManager.addSystemComponent(transition, lastNodeId);
-                lastNodeId = transition.id;
+                transition.state = calculateComponentPhysics(transition, activeFlow, incomingTemp, incomingDim, globalParams);
+                stateManager.addSystemComponent(transition, currentParentId, currentParentPort, 'inlet');
+                currentParentId = transition.id;
+                currentParentPort = 'outlet';
             }
         }
 
-        // --- 3. Add the recalculated user component back to the graph ---
-        stateManager.addSystemComponent(component, lastNodeId, 'outlet', 'inlet');
-        lastNodeId = component.id;
+        // Add User Component
+        stateManager.addSystemComponent(comp, currentParentId, currentParentPort, 'inlet');
 
-        // --- 4. Update tracking variables for next iteration ---
-        if (component.state.outletDimension && component.state.outletDimension['outlet']) {
-            lastOutlet = component.state.outletDimension['outlet'];
-        }
-        if (component.state.airflow_out && component.state.airflow_out['outlet']) {
-            currentAirflow = component.state.airflow_out['outlet'];
-        }
-        if (component.state.temperature_out && component.state.temperature_out['outlet'] !== undefined) {
-            currentTemp = component.state.temperature_out['outlet'];
-        }
+        // Traverse Children
+        const childrenEdges = userEdges.filter(e => e.from === nodeId);
+        childrenEdges.forEach(edge => {
+            const outPort = edge.fromPort;
+            const childId = edge.to;
+
+            let portFlow = activeFlow;
+            if (comp.state.airflow_out && comp.state.airflow_out[outPort] !== undefined) {
+                portFlow = comp.state.airflow_out[outPort];
+            } else if (comp.state.airflow_out && comp.state.airflow_out['outlet'] !== undefined) {
+                portFlow = comp.state.airflow_out['outlet'];
+            }
+
+            let portTemp = incomingTemp;
+            if (comp.state.temperature_out && comp.state.temperature_out[outPort] !== undefined) {
+                portTemp = comp.state.temperature_out[outPort];
+            } else if (comp.state.temperature_out && comp.state.temperature_out['outlet'] !== undefined) {
+                portTemp = comp.state.temperature_out['outlet'];
+            }
+
+            let portDim = null;
+            if (comp.state.outletDimension && comp.state.outletDimension[outPort]) {
+                portDim = comp.state.outletDimension[outPort];
+            } else if (comp.state.outletDimension && comp.state.outletDimension['outlet']) {
+                portDim = comp.state.outletDimension['outlet'];
+            }
+
+            traverseAndCalculate(childId, portFlow, portTemp, portDim, comp.id, outPort);
+        });
+    }
+
+    // Find Root Nodes
+    const rootIds = Object.keys(userNodes).filter(id => !userEdges.find(e => e.to === id));
+
+    // Sort root nodes just in case
+    rootIds.sort((a, b) => a.localeCompare(b));
+
+    rootIds.forEach(rootId => {
+        traverseAndCalculate(rootId, startAirflow, temp, null, null, null);
     });
 
     ui.renderSystem();
@@ -999,44 +1059,52 @@ function recalculateSystem() {
 }
 window.recalculateSystem = recalculateSystem;
 
-// Exposed handler for Add button
+
+// Exposed handler for Add button (Legacy / Global approach fallback if needed)
 function handleAddSystemComponent(event) {
     if (event) event.preventDefault();
     handleAddComponent(event);
 }
 window.handleAddSystemComponent = handleAddSystemComponent;
 
-function handleAddComponent(event) {
+// --- New Inline Form Submit Logic (Phase 15.4) ---
+window.handleInlineComponentSubmit = function (event) {
     if (event) event.preventDefault();
-    const type = document.getElementById('systemComponentType').value;
+    const type = document.getElementById('inlineComponentType').value;
 
-    // We need starting conditions. 
-    // Usually: from global input OR from last component
     const temp = parseLocalFloat(document.getElementById('temperature').value);
     if (isNaN(temp)) return alert("Ugyldig temperatur.");
 
     let currentAirflow = parseLocalFloat(document.getElementById('system_airflow').value);
     if (isNaN(currentAirflow) || currentAirflow <= 0) return alert("Ugyldig start luftmængde.");
 
-    const systemComponents = getSystemComponents();
-    let previousComponent = systemComponents.length > 0 ? systemComponents[systemComponents.length - 1] : null;
+    // The explicit parent where this component is being added
+    const parentId = window.currentAddParentId;
+    const parentPort = window.currentAddParentPort;
 
-    if (previousComponent && previousComponent.state && previousComponent.state.airflow_out) {
-        // Just take the first output airflow for now in the linear builder
-        currentAirflow = Object.values(previousComponent.state.airflow_out)[0] || currentAirflow;
-    } else if (previousComponent && previousComponent.airflow) {
-        currentAirflow = previousComponent.airflow;
+    // We need to resolve what airflow is actually present at this port dynamically
+    const parentComp = getSystemComponent(parentId);
+    if (parentComp && parentComp.state && parentComp.state.airflow_out) {
+        if (parentComp.state.airflow_out[parentPort] !== undefined) {
+            currentAirflow = parentComp.state.airflow_out[parentPort];
+        } else if (parentComp.state.airflow_out['outlet'] !== undefined) {
+            currentAirflow = parentComp.state.airflow_out['outlet'];
+        }
+    } else if (parentComp && parentComp.airflow) {
+        currentAirflow = parentComp.airflow;
     }
 
     let component = null;
 
     if (type === 'straightDuct') {
-        component = getDuctData('');
+        component = getDuctData(''); // Empty string suffix means read from the non-edit inputs (inline form uses base IDs)
     } else if (type === 'fitting') {
-        component = getFittingData('');
+        const fittingTypeSelect = document.getElementById('inlineFittingType');
+        const fittingType = fittingTypeSelect ? fittingTypeSelect.value : null;
+        component = getFittingData('', fittingType);
     } else if (type === 'manualLoss') {
-        const name = document.getElementById('manualLossName').value || 'Manuel Komponent';
-        const pressureLoss = parseLocalFloat(document.getElementById('manualLossValue').value);
+        const name = document.getElementById('manualDescription').value || 'Manuel Komponent';
+        const pressureLoss = parseLocalFloat(document.getElementById('manualPressureLoss').value);
         if (isNaN(pressureLoss)) {
             alert("Ugyldigt tryktab!");
             return;
@@ -1052,39 +1120,34 @@ function handleAddComponent(event) {
     if (component) {
         component.id = 'node_' + Date.now();
 
-        // Sync global UI parameters to state so they aren't reverted by undo/redo/state changes
+        // Sync global UI parameters to state
         const flowTypeEl = document.querySelector('input[name="systemFlowType"]:checked');
         const systemType = flowTypeEl ? flowTypeEl.value : 'splitting';
         const projectName = document.getElementById('projectName') ? document.getElementById('projectName').value : '';
         const startAirflowVal = document.getElementById('system_airflow') ? document.getElementById('system_airflow').value : '1000';
         stateManager.setProjectParams({ systemType, startAirflow: startAirflowVal, projectName });
 
-        // The old code had a currentAirflow tracking, but graph nodes shouldn't hardcode it. 
-        // We will store currentAirflow in state so recalculateSystem has a starting point if it's the first node.
-        if (!previousComponent) {
+        // If it's the very first node (though inline buttons only appear if there's a tree, but just in case)
+        const systemComponents = getSystemComponents();
+        if (systemComponents.length === 0) {
             component.state.airflow_in = currentAirflow;
         }
 
-        const correctionTargetId = getCorrectionTargetId();
-
-        if (correctionTargetId) {
-            // For now, correction is just injecting after target. We need to handle this in Graph.
-            // Let's just append linearly for now and clear target.
-            stateManager.addSystemComponent(component, correctionTargetId);
-            setCorrectionTargetId(null);
+        // Add exactly where requested
+        if (parentId) {
+            stateManager.addSystemComponent(component, parentId, parentPort || 'outlet', 'inlet');
         } else {
             stateManager.addSystemComponent(component);
         }
 
-        recalculateSystem();
-        ui.showSaveStatus('Komponent tilføjet');
-        updateUndoRedoUI(canUndo(), canRedo());
+        // Cleanup temp inline state
+        window.currentAddParentId = null;
+        window.currentAddParentPort = null;
+        setCorrectionTargetId(null);
 
-        // Scroll to bottom
-        setTimeout(() => {
-            const list = document.getElementById('systemComponentsList');
-            if (list) list.scrollTop = list.scrollHeight;
-        }, 100);
+        recalculateSystem();
+        ui.showSaveStatus('Komponent tilføjet', 'saved');
+        ui.updateUndoRedoUI(canUndo(), canRedo());
     }
 }
 
@@ -1108,8 +1171,7 @@ async function initializeApp() {
 
 
     // System tab listeners
-    document.getElementById('systemComponentType').addEventListener('change', ui.handleComponentTypeChange);
-    document.getElementById('systemAddComponentForm').addEventListener('submit', handleAddComponent);
+    // (systemComponentType listener removed, inline forms handle their own events)
     document.getElementById('fileLoader').addEventListener('change', window.loadSystem);
 
     // --- Project Management UI ---
@@ -1375,24 +1437,23 @@ window.loadSystem = (event) => {
 
             if (data.state) {
                 // New graph-based format
-                stateManager.state = data.state;
-                stateManager.persist();
-
-                // Keep UI form fields in sync with loaded data
-                document.getElementById('system_airflow').value = stateManager.state.startAirflow || '';
-                const radios = document.getElementsByName('systemFlowType');
-                radios.forEach(r => { if (r.value === stateManager.state.systemType) r.checked = true; });
-
-                ui.renderSystem();
+                stateManager.importState(data.state);
             } else {
                 // Legacy array-based format
-                document.getElementById('system_airflow').value = data.startAirflow || '';
-                const radios = document.getElementsByName('systemFlowType');
-                radios.forEach(r => { if (r.value === data.systemType) r.checked = true; });
-
-                setSystemComponents(data.components || []);
-                ui.renderSystem();
+                const legacyState = {
+                    systemComponents: data.components || [],
+                    startAirflow: data.startAirflow || '1000',
+                    systemType: data.systemType || 'splitting'
+                };
+                stateManager.importState(legacyState);
             }
+
+            // Keep UI form fields in sync with loaded data
+            document.getElementById('system_airflow').value = stateManager.state.startAirflow || '1000';
+            const radios = document.getElementsByName('systemFlowType');
+            radios.forEach(r => { if (r.value === stateManager.state.systemType) r.checked = true; });
+
+            if (window.recalculateSystem) window.recalculateSystem();
             ui.toggleSystemMenu();
         } catch (error) {
             alert('Fejl ved indlæsning af fil: ' + error.message);

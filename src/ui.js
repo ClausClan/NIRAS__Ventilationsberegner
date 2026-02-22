@@ -118,19 +118,7 @@ export function getSystemFormHtml() {
             <div id="systemComponentsContainer"></div>
             <div id="systemDiagramContainer" class="hidden"></div>
             <div id="totalPressureDropContainer" class="results-container"></div>
-            <h3 style="margin-top: 30px; border-top: 1px solid var(--border-color); padding-top: 30px;">Tilføj Komponent</h3>
-            <form id="systemAddComponentForm">
-                <div class="input-group">
-                    <label for="systemComponentType">Komponenttype</label>
-                    <select id="systemComponentType" class="input-field">
-                        <option value="">-- Vælg type --</option>
-                        <option value="straightDuct">Lige Kanal</option>
-                        <option value="fitting">Formstykke</option>
-                        <option value="manualLoss">Manuelt Tab</option>
-                    </select>
-                </div>
-                <div id="systemComponentInputsContainer"></div>
-            </form>
+    
             <input type="file" id="fileLoader" style="display: none;" accept=".json">
         </section>
     `;
@@ -144,6 +132,10 @@ export function renderDuctResult(data) {
     const dimResultsContainer = document.getElementById('dim_resultsContainer');
     if (!dimResultsContainer) return;
 
+    if (!data) {
+        dimResultsContainer.innerHTML = '';
+        return;
+    }
     let content = `<p><strong>Beregnet med Luftmængde (q):</strong> ${formatLocalFloat(data.airflow, 0)} m³/h</p>`;
     if (data.mode === 'calculate') {
         content += data.shape === 'round' ? `<p>Beregnet ideal-diameter: ${formatLocalFloat(data.idealDiameter, 1)} mm</p>` : `<p>Beregnet ideal-dimension: ${formatLocalFloat(data.idealSideA, 1)} x ${formatLocalFloat(data.idealSideB, 1)} mm</p>`;
@@ -161,6 +153,8 @@ export function renderDuctResult(data) {
 
 export function renderFittingsResult() {
     const fittingsResultsContainer = document.getElementById('fittings_resultsContainer');
+    if (!fittingsResultsContainer) return;
+
     const fittingsList = getFittings();
     fittingsResultsContainer.innerHTML = '';
     if (fittingsList.length > 0) {
@@ -179,7 +173,12 @@ export function renderFittingsResult() {
 export function renderSystem() {
     const systemComponentsContainer = document.getElementById('systemComponentsContainer');
     const totalPressureDropContainer = document.getElementById('totalPressureDropContainer');
-    const systemComponents = getSystemComponents();
+
+    if (!systemComponentsContainer || !totalPressureDropContainer) return;
+
+    // Default to empty array if stateManager is not ready
+    const systemTree = window.stateManager ? window.stateManager.getSystemTree() : [];
+    const flatComponents = window.stateManager ? window.stateManager.getSystemComponents() : [];
 
     systemComponentsContainer.innerHTML = '';
     totalPressureDropContainer.innerHTML = '';
@@ -188,30 +187,58 @@ export function renderSystem() {
     const systemTypeRadios = document.getElementsByName('systemFlowType');
     const systemTypeGroup = document.getElementById('globalSystemTypeGroup');
 
-    if (systemComponents.length > 0) {
+    if (flatComponents.length > 0) {
         airflowInput.disabled = true;
         systemTypeRadios.forEach(radio => radio.disabled = true);
-        systemTypeGroup.classList.add('disabled');
+        if (systemTypeGroup) systemTypeGroup.classList.add('disabled');
     } else {
         airflowInput.disabled = false;
         systemTypeRadios.forEach(radio => radio.disabled = false);
-        systemTypeGroup.classList.remove('disabled');
+        if (systemTypeGroup) systemTypeGroup.classList.remove('disabled');
     }
 
-    if (systemComponents.length === 0) {
-        const selectedType = document.querySelector('input[name="systemFlowType"]:checked').value;
+    if (flatComponents.length === 0) {
+        const selectedType = document.querySelector('input[name="systemFlowType"]:checked')?.value || 'splitting';
         let noteText = '';
         if (selectedType === 'splitting') {
             noteText = 'Systemet er tomt. Start ved anlægget og arbejd dig <strong>ud</strong> mod de yderste grene.';
         } else { // merging
             noteText = 'Systemet er tomt. Start ved den yderste gren og arbejd dig <strong>ind</strong> mod anlægget.';
         }
-        systemComponentsContainer.innerHTML = `<p style="text-align:center; color: var(--text-muted-color);">${noteText}</p>`;
+        systemComponentsContainer.innerHTML = `
+            <div id="emptyStateButtonContainer" style="text-align:center; padding: 40px 20px; background: #f9f9f9; border: 2px dashed var(--border-color); border-radius: 8px; margin-top: 20px;">
+                <p style="color: var(--text-muted-color); margin-bottom: 20px; font-size: 1.1em;">${noteText}</p>
+                <button class="button primary" style="padding: 10px 24px; font-size: 1.1em;" onclick="window.showAddForm(null, null)">+ Tilføj Første Komponent</button>
+            </div>
+            <table class="fittings-table tree-table" style="border-spacing: 0; width: 100%;">
+                <tbody id="emptyStateTbody"></tbody>
+            </table>
+        `;
         return;
     }
 
-    let totalPressureDrop = 0;
-    const tableRows = systemComponents.map((c, index) => {
+    let globalCriticalPressureDrop = 0;
+
+    function calculateCriticalPath(node) {
+        if (!node || node.isIncluded === false) return 0;
+        let pLoss = (node.state && node.state.pressureLoss) ? node.state.pressureLoss : 0;
+        let maxChildLoss = 0;
+        if (node.children) {
+            Object.values(node.children).forEach(childArray => {
+                childArray.forEach(child => {
+                    let childLoss = calculateCriticalPath(child);
+                    if (childLoss > maxChildLoss) maxChildLoss = childLoss;
+                });
+            });
+        }
+        return pLoss + maxChildLoss;
+    }
+
+    if (systemTree.length > 0) {
+        globalCriticalPressureDrop = calculateCriticalPath(systemTree[0]);
+    }
+
+    function renderNode(c, depth, labelPath) {
         const state = c.state || {};
         const pressureLoss = state.pressureLoss || 0;
         const velocity = state.velocity || null;
@@ -232,7 +259,6 @@ export function renderSystem() {
                     q_in = (chosenPath === 'branch' ? props.q_branch : props.q_straight) || airflowDisp;
                     q_out = state.airflow_out ? state.airflow_out['outlet'] || airflowDisp : airflowDisp;
                 }
-
                 airflowText = `Ind: ${formatLocalFloat(q_in, 0)}<br>${pathStr}: ${formatLocalFloat(q_out || 0, 0)}`;
             } else if (c.type === 'tee_bullhead') {
                 const chosenPath = data.chosenPath || props.path || 'path1';
@@ -242,18 +268,14 @@ export function renderSystem() {
             }
         }
 
-        // Use outlet flow for merge tees or others if appropriate, but input flow is better for list display
-
-        totalPressureDrop += pressureLoss;
         const velocityText = velocity ? `${formatLocalFloat(velocity, 2)} m/s` : 'N/A';
         const detailsButton = state.calculationDetails ? `<button class="details-btn" onclick="window.showSystemComponentDetails('${c.id}')">ⓘ</button>` : '';
-        const deleteButton = (index === systemComponents.length - 1) ? `<button class="delete-btn" onclick="window.handleDeleteLastComponent()">&times;</button>` : '';
+        const deleteButton = `<button class="delete-btn" onclick="window.handleDeleteComponent('${c.id}')">&times;</button>`;
 
         const rowClass = c.isAutoGenerated ? 'auto-generated' : '';
         let warningHtml = '';
         if (c.properties && c.properties.isEstimated) {
             warningHtml = `<br><small style="color:var(--error-color);font-style:italic;">OBS: Estimeret tryktab</small>`;
-            // Tilføj korrektionsknap
             warningHtml += ` <button class="details-btn" style="font-size: 0.8rem; padding: 2px 4px;" onclick="window.requestCorrection('${c.id}')">[+Pa]</button>`;
         }
 
@@ -266,9 +288,27 @@ export function renderSystem() {
             }
         }
 
-        return `
-            <tr class="${rowClass}">
-                <td>${c.name}<br><small>${c.details || ''}</small>${warningHtml}</td>
+        const paddingLeft = Math.max(0, depth * 25);
+        const includeChecked = c.isIncluded !== false ? 'checked' : '';
+        const opacity = c.isIncluded !== false ? '1' : '0.4';
+
+        let pathLabelHtml = '';
+        if (labelPath) {
+            pathLabelHtml = `<div style="font-size:10px; color:#00E5FF; margin-bottom: 2px;">↳ ${labelPath}</div>`;
+        }
+
+        let rowHtml = `
+            <tr class="${rowClass}" style="opacity: ${opacity};">
+                <td style="padding-left: ${paddingLeft + 10}px;">
+                    ${pathLabelHtml}
+                    <div style="display:flex; align-items:center; gap: 8px;">
+                        <input type="checkbox" ${includeChecked} onchange="window.toggleBranchIncluded('${c.id}', this.checked)" title="Medtag i beregning">
+                        <div>
+                            <strong>${c.name}</strong><br>
+                            <small>${c.details || ''}</small>${warningHtml}
+                        </div>
+                    </div>
+                </td>
                 <td>${airflowText}</td>
                 <td>${tempText}</td>
                 <td>${velocityText}</td>
@@ -280,20 +320,81 @@ export function renderSystem() {
                 </td>
             </tr>
         `;
-    }).join('');
+
+        let expectedPorts = ['outlet'];
+        const pType = c.type || '';
+        if (pType.startsWith('tee_')) {
+            if (pType === 'tee_bullhead') {
+                expectedPorts = ['outlet_path1', 'outlet_path2'];
+            } else {
+                expectedPorts = ['outlet_branch', 'outlet_straight'];
+            }
+        }
+
+        expectedPorts.forEach(portName => {
+            let childLabel = '';
+            let childDepth = depth;
+            if (portName === 'outlet_branch' || portName === 'outlet_straight') {
+                childLabel = portName === 'outlet_branch' ? 'Afgrening' : 'Ligeud';
+                childDepth = depth + 1;
+            } else if (portName === 'outlet_path1' || portName === 'outlet_path2') {
+                childLabel = portName === 'outlet_path2' ? 'Gren 2' : 'Gren 1';
+                childDepth = depth + 1;
+            }
+
+            const hasChildren = c.children && c.children[portName] && c.children[portName].length > 0;
+
+            if (hasChildren) {
+                c.children[portName].forEach(child => {
+                    rowHtml += renderNode(child, childDepth, childLabel);
+                });
+            } else {
+                let addLabel = "Tilføj videre";
+                if (portName === 'outlet_branch') addLabel = "Tilføj til Afgrening";
+                if (portName === 'outlet_straight') addLabel = "Tilføj Ligeud";
+                if (portName === 'outlet_path1') addLabel = "Tilføj til Gren 1";
+                if (portName === 'outlet_path2') addLabel = "Tilføj til Gren 2";
+
+                rowHtml += `
+                    <tr class="add-node-row">
+                        <td colspan="6" style="padding-left: ${Math.max(0, childDepth * 25) + 10}px; padding-top:4px; padding-bottom:4px; opacity: 0.6;">
+                            <button class="button secondary" style="font-size: 0.75rem; padding: 2px 8px; border-radius: 4px;" onclick="window.showAddForm('${c.id}', '${portName}')">+ ${addLabel}</button>
+                        </td>
+                    </tr>
+                `;
+            }
+        });
+
+        return rowHtml;
+    }
+
+    let tableRows = '';
+    if (systemTree.length > 0) {
+        systemTree.forEach(root => {
+            tableRows += renderNode(root, 0, '');
+        });
+    }
 
     systemComponentsContainer.innerHTML = `
-        <table class="fittings-table">
+        <table class="fittings-table tree-table" style="border-spacing: 0; width: 100%;">
+            <colgroup>
+                <col style="width: 35%;">
+                <col style="width: 15%;">
+                <col style="width: 15%;">
+                <col style="width: 10%;">
+                <col style="width: 10%;">
+                <col style="width: 15%;">
+            </colgroup>
             <thead>
-                <tr><th>Komponent</th><th>Luftmængde</th><th>Temp.</th><th>Hastighed</th><th>Tryktab</th><th></th></tr>
+                <tr><th style="text-align:left; padding-left:10px;">Komponent</th><th>Luftmængde</th><th>Temp.</th><th>Hastighed</th><th>Tryktab</th><th>Handlinger</th></tr>
             </thead>
             <tbody>${tableRows}</tbody>
         </table>`;
 
     totalPressureDropContainer.innerHTML = `
         <div class="result-card">
-            <h3>Samlet Systemtryktab</h3>
-            <p class="highlight">${formatLocalFloat(totalPressureDrop, 2)} Pa</p>
+            <h3>Samlet Systemtryktab (Kritisk Vej)</h3>
+            <p class="highlight">${formatLocalFloat(globalCriticalPressureDrop, 2)} Pa</p>
         </div>`;
 }
 
@@ -305,7 +406,7 @@ export function showDuctDetails() {
     const modalTitle = document.querySelector('#modalTitle');
     const modalBody = document.querySelector('#modalBody');
 
-    if (!ductResult) return;
+    if (!ductResult || !detailsModal || !modalTitle || !modalBody) return;
 
     const temp = parseLocalFloat(document.getElementById('temperature').value);
     const { RHO } = getAirProperties(temp);
@@ -333,7 +434,7 @@ export function showFittingDetails(id) {
     const modalBody = document.querySelector('#modalBody');
     const detailsModal = document.getElementById('detailsModal');
 
-    if (!item) return;
+    if (!item || !detailsModal || !modalTitle || !modalBody) return;
     const { details, pressureLoss, name, airflow } = item;
     modalTitle.innerText = `Detaljer for ${name}`;
     modalBody.innerHTML = `<p><strong>Luftmængde (q):</strong> ${formatLocalFloat(airflow, 0)} m³/h</p><p><strong>Areal (A, intern):</strong> ${formatLocalFloat(details.A_m2, 5)} m²</p><p><strong>Hastighed (v):</strong> ${formatLocalFloat(details.v_ms, 2)} m/s</p><p><strong>Zeta-værdi (ζ):</strong> ${formatLocalFloat(details.zeta, 3)}</p><p><strong>Dynamisk Tryk (Pₐᵧₙ):</strong> ${formatLocalFloat(details.Pdyn_Pa, 2)} Pa</p><hr><p><strong>Tryktab (Δp) =</strong> ζ * Pₐᵧₙ</p><p><strong>Δp =</strong> ${formatLocalFloat(details.zeta, 3)} * ${formatLocalFloat(details.Pdyn_Pa, 2)} = <strong>${formatLocalFloat(pressureLoss, 2)} Pa</strong></p>`;
@@ -347,6 +448,9 @@ export function showSystemComponentDetails(id) {
     const modalTitle = document.querySelector('#modalTitle');
     const modalBody = document.querySelector('#modalBody');
     const detailsModal = document.getElementById('detailsModal');
+
+    if (!detailsModal || !modalTitle || !modalBody) return;
+
     const data = component.state.calculationDetails;
     const state = component.state;
 
@@ -702,6 +806,7 @@ export function renderFittingInputs() {
 
 export function handleComponentTypeChange() {
     const systemComponentTypeSelect = document.getElementById('systemComponentType');
+    if (!systemComponentTypeSelect) return; // Legacy static form removed
     const systemComponentInputsContainer = document.getElementById('systemComponentInputsContainer');
 
     const type = systemComponentTypeSelect.value;
@@ -725,19 +830,18 @@ export function handleComponentTypeChange() {
         systemComponentInputsContainer.innerHTML = `
             <div class="input-group"><label for="manualPressureLoss">Tryktab</label><div class="input-unit-wrapper" data-unit="Pa"><input type="text" id="manualPressureLoss" class="input-field" required></div></div>
             <div class="input-group"><label for="manualDescription">Beskrivelse</label><input type="text" id="manualDescription" class="input-field" placeholder="f.eks. Spjæld, Rist, Filter"></div>
-            <button type="button" class="button primary" onclick="window.handleAddSystemComponent()">Tilføj til System</button>`;
+            <button type="button" class="button primary" onclick="window.handleInlineComponentSubmit(event)">Tilføj til System</button>`;
     }
 }
-
 export function renderSystemDuctInputs(container, initialData = null) {
     const roundOptions = STANDARD_ROUND_SIZES_MM.map(s => `<option value="${s}">${s} mm</option>`).join('');
     const rectOptions = STANDARD_RECT_SIZES_MM.map(s => `<option value="${s}">${s} mm</option>`).join('');
     const systemComponents = getSystemComponents();
     const lastComponent = systemComponents.length > 0 ? systemComponents[systemComponents.length - 1] : null;
 
-    // Helper to generate unique IDs if needed (for edit mode)
-    const suffix = container.id === 'systemComponentInputsContainer' ? '' : '_edit';
-    const btnAction = initialData ? `window.handleUpdateComponent('${initialData.id}')` : 'window.handleAddSystemComponent()';
+    const isAddMode = container.id === 'systemComponentInputsContainer' || container.id.startsWith('add_container') || container.id === 'inlineFittingInputsContainer';
+    const suffix = isAddMode ? '' : '_edit';
+    const btnAction = initialData ? `window.handleUpdateComponent('${initialData.id}')` : 'window.handleInlineComponentSubmit(event)';
     const btnText = initialData ? 'Opdater Komponent' : 'Tilføj til System';
 
     container.innerHTML = `
@@ -807,10 +911,10 @@ export function renderSystemDuctInputs(container, initialData = null) {
 }
 
 export function renderSystemFittingInputs(container = null, initialData = null) {
-    // If container not provided, assume default add form
-    const isEditMode = !!container;
     const targetContainer = container || document.getElementById('systemFittingInputsContainer');
-    const suffix = isEditMode ? '_edit' : '';
+    const isAddMode = targetContainer.id === 'systemComponentInputsContainer' || targetContainer.id.startsWith('add_container') || targetContainer.id === 'inlineFittingInputsContainer' || targetContainer.id === 'systemFittingInputsContainer';
+    const isEditMode = !isAddMode && initialData && initialData.id;
+    const suffix = isAddMode ? '' : '_edit';
 
     // For edit mode, we might pass the type directly in data, or use a select in the container
     // But realistically, if we edit a fitting, we probably want to keep the type or change it via a select?
@@ -834,6 +938,12 @@ export function renderSystemFittingInputs(container = null, initialData = null) 
     const lastComponent = systemComponents.length > 0 ? systemComponents[systemComponents.length - 1] : null;
     const roundOptions = STANDARD_ROUND_SIZES_MM.map(s => `<option value="${s}">${s} mm</option>`).join('');
     const rectOptions = STANDARD_RECT_SIZES_MM.map(s => `<option value="${s}">${s} mm</option>`).join('');
+    const orientationOptions = `
+        <option value="Left">Venstre</option>
+        <option value="Right">Højre</option>
+        <option value="Up">Op (Loft)</option>
+        <option value="Down">Ned (Gulv)</option>
+    `;
     let inputsHtml = '';
 
     // Helper for IDs
@@ -846,6 +956,7 @@ export function renderSystemFittingInputs(container = null, initialData = null) 
                     <div class="input-group"><label for="${id('sys_d')}">Diameter (d)</label><select id="${id('sys_d')}" class="input-field">${roundOptions}</select></div>
                     <div class="input-group"><label for="${id('sys_angle')}">Vinkel (α)</label><input type="text" id="${id('sys_angle')}" class="input-field" value="90"></div>
                     <div class="input-group"><label for="${id('sys_rd')}">R/d ratio</label><input type="text" id="${id('sys_rd')}" class="input-field" value="1.0"></div>
+                    <div class="input-group"><label for="${id('sys_orientation')}">Retning (3D)</label><select id="${id('sys_orientation')}" class="input-field">${orientationOptions}</select></div>
                 </div>`;
             break;
         case 'bend_rect':
@@ -855,6 +966,7 @@ export function renderSystemFittingInputs(container = null, initialData = null) 
                     <div class="input-group"><label for="${id('sys_w')}">Bredde (B)</label><select id="${id('sys_w')}" class="input-field">${rectOptions}</select></div>
                     <div class="input-group"><label for="${id('sys_angle_r')}">Vinkel (α)</label><input type="text" id="${id('sys_angle_r')}" class="input-field" value="90"></div>
                     <div class="input-group"><label for="${id('sys_rh')}">R/H ratio</label><input type="text" id="${id('sys_rh')}" class="input-field" value="1.0"></div>
+                    <div class="input-group"><label for="${id('sys_orientation')}">Retning (3D)</label><select id="${id('sys_orientation')}" class="input-field">${orientationOptions}</select></div>
                 </div>`;
             break;
         case 'expansion':
@@ -911,6 +1023,10 @@ export function renderSystemFittingInputs(container = null, initialData = null) 
                                         <input type="radio" id="${id('sysTeePathBranch')}" name="${id('sysTeePath')}" value="branch"><label for="${id('sysTeePathBranch')}">Afgrening</label> 
                                     </div>
                                 </div>
+                                <div class="sub-group">
+                                    <label for="${id('sys_orientation')}">Afgreningens Retning (3D)</label>
+                                    <select id="${id('sys_orientation')}" class="input-field">${orientationOptions}</select>
+                                </div>
                             `;
                         } else { // merging
                             teeContainer.innerHTML = `
@@ -928,6 +1044,10 @@ export function renderSystemFittingInputs(container = null, initialData = null) 
                                         <input type="radio" id="${id('sysTeePathStraight')}" name="${id('sysTeePath')}" value="straight" checked><label for="${id('sysTeePathStraight')}">Ligeud</label> 
                                         <input type="radio" id="${id('sysTeePathBranch')}" name="${id('sysTeePath')}" value="branch"><label for="${id('sysTeePathBranch')}">Afgrening</label> 
                                     </div>
+                                </div>
+                                <div class="sub-group">
+                                    <label for="${id('sys_orientation')}">Afgreningens Retning (3D)</label>
+                                    <select id="${id('sys_orientation')}" class="input-field">${orientationOptions}</select>
                                 </div>
                             `;
                         }
@@ -947,6 +1067,9 @@ export function renderSystemFittingInputs(container = null, initialData = null) 
                             if (data.path) {
                                 const rad = document.querySelector(`input[name="${id('sysTeePath')}"][value="${data.path}"]`);
                                 if (rad) rad.checked = true;
+                            }
+                            if (data.orientation && document.getElementById(id('sys_orientation'))) {
+                                document.getElementById(id('sys_orientation')).value = data.orientation;
                             }
                         }
                     };
@@ -978,11 +1101,15 @@ export function renderSystemFittingInputs(container = null, initialData = null) 
                         <input type="radio" id="${id('sysTeePath1')}" name="${id('sysTeePath')}" value="path1" checked><label for="${id('sysTeePath1')}">Gren 1</label> 
                         <input type="radio" id="${id('sysTeePath2')}" name="${id('sysTeePath')}" value="path2"><label for="${id('sysTeePath2')}">Gren 2</label> 
                     </div>
+                </div>
+                <div class="sub-group">
+                    <label for="${id('sys_orientation')}">Planens Retning (3D)</label>
+                    <select id="${id('sys_orientation')}" class="input-field">${orientationOptions}</select>
                 </div>`;
             break;
     }
 
-    const btnAction = isEditMode ? `window.handleUpdateComponent('${initialData.id}')` : 'window.handleAddSystemComponent()';
+    const btnAction = isEditMode ? `window.handleUpdateComponent('${initialData.id}')` : 'window.handleInlineComponentSubmit(event)';
     const btnText = isEditMode ? 'Opdater Komponent' : 'Tilføj til System';
 
     if (inputsHtml) {
@@ -1016,6 +1143,7 @@ export function renderSystemFittingInputs(container = null, initialData = null) 
         if (p.d_branch) setVal(id('sys_tee_d_branch'), p.d_branch);
         if (p.d_out1) setVal(id('sys_tee_d_out1'), p.d_out1);
         if (p.d_out2) setVal(id('sys_tee_d_out2'), p.d_out2);
+        if (p.orientation) setVal(id('sys_orientation'), p.orientation);
 
         if (p.ambientTemp !== undefined) setVal(id('sys_ambient'), p.ambientTemp);
         if (p.isoThick !== undefined) setVal(id('sys_isoThick'), p.isoThick);
@@ -1235,8 +1363,13 @@ export function populateDatalists() {
             option.value = size;
             rectList.appendChild(option);
         });
+
     }
 }
+
+// Expose handlers globally for inline HTML strings
+window.showAddForm = showAddForm;
+window.handleInlineComponentTypeChange = handleInlineComponentTypeChange;
 
 
 export function showConfirm(message, onConfirm) {
@@ -1361,3 +1494,140 @@ export function showEditForm(id) {
         container.innerHTML = 'Redigering ikke understøttet for denne type endnu.';
     }
 }
+
+export function showAddForm(parentId, parentPort) {
+    // 1. Close any existing add forms
+    const existingAddRows = document.querySelectorAll('.add-form-row');
+    existingAddRows.forEach(row => row.remove());
+
+    const isRoot = !parentId || parentId === 'null';
+    let attachTarget = null;
+
+    // 2. Find where to attach
+    if (isRoot) {
+        attachTarget = document.getElementById('emptyStateTbody');
+    } else {
+        const rows = document.querySelectorAll('#systemComponentsContainer tr');
+        rows.forEach(row => {
+            if (row.innerHTML.includes(`window.showAddForm('${parentId}', '${parentPort}')`)) {
+                attachTarget = row;
+            }
+        });
+    }
+
+    if (!attachTarget) {
+        console.warn('showAddForm could not find attach target for', parentId, parentPort);
+        return;
+    }
+
+    // 3. Hide original button
+    if (isRoot) {
+        const btnContainer = document.getElementById('emptyStateButtonContainer');
+        if (btnContainer) btnContainer.style.display = 'none';
+    } else {
+        attachTarget.style.display = 'none';
+    }
+
+    // 4. Insert Form Row
+    const addRow = document.createElement('tr');
+    addRow.className = 'add-form-row';
+    addRow.style.background = '#eef7ff';
+
+    const addCell = document.createElement('td');
+    addCell.colSpan = 7;
+    addCell.style.padding = '20px';
+    addCell.style.border = '2px dashed #0084ff';
+    addCell.style.borderRadius = '8px';
+
+    addRow.appendChild(addCell);
+
+    if (isRoot) {
+        attachTarget.appendChild(addRow);
+    } else {
+        attachTarget.after(addRow);
+    }
+
+    // Pass the target logic to the main app handlers via global state
+    window.setCorrectionTargetId(isRoot ? null : parentId);
+    window.currentAddParentId = isRoot ? null : parentId;
+    window.currentAddParentPort = isRoot ? null : parentPort;
+
+    // 5. Render Form HTML
+    const containerId = `add_container_${parentId || 'root'}_${parentPort || 'root'}`;
+    addCell.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; border-bottom:1px solid #ccc; padding-bottom:10px;">
+            <h4 style="margin:0; color: #0084ff;">Tilføj Komponent Her</h4>
+            <button class="button secondary" style="padding:4px 12px; font-size:12px;" onclick="
+                this.closest('tr').remove(); 
+                document.querySelectorAll('.add-node-row').forEach(r => r.style.display='');
+                const emptyBtn = document.getElementById('emptyStateButtonContainer');
+                if (emptyBtn) emptyBtn.style.display='';
+                window.currentAddParentId = null;
+                window.currentAddParentPort = null;
+            ">Annuller & Luk</button>
+        </div>
+        
+        <div class="input-group">
+            <label for="inlineComponentType">Komponenttype</label>
+            <select id="inlineComponentType" class="input-field" onchange="window.handleInlineComponentTypeChange('${containerId}')">
+                <option value="">-- Vælg type --</option>
+                <option value="straightDuct">Lige Kanal</option>
+                <option value="fitting">Formstykke</option>
+                <option value="manualLoss">Manuelt Tab</option>
+            </select>
+        </div>
+        <div id="${containerId}"></div>
+    `;
+}
+
+export function handleInlineComponentTypeChange(containerId) {
+    const inlineTypeSelect = document.getElementById('inlineComponentType');
+    const container = document.getElementById(containerId);
+    if (!inlineTypeSelect || !container) return;
+
+    const type = inlineTypeSelect.value;
+    container.innerHTML = ''; // Clear old inputs
+
+    if (type === 'straightDuct') {
+        renderSystemDuctInputs(container);
+        // Quick override on the submit action to use our inline logic
+        const btn = container.querySelector('button');
+        if (btn) btn.setAttribute('onclick', 'window.handleInlineComponentSubmit()');
+
+    } else if (type === 'fitting') {
+        container.innerHTML = `
+            <div class="input-group"><label for="inlineFittingType">Vælg type formstykke</label><select id="inlineFittingType" class="input-field">
+                <option value="">-- Vælg type --</option>
+                <optgroup label="Bøjninger"><option value="bend_circ">Bøjning, Cirkulær</option><option value="bend_rect">Bøjning, Rektangulær</option></optgroup>
+                <optgroup label="Dimensionsændringer"><option value="expansion">Udvidelse</option><option value="contraction">Indsnævring</option></optgroup>
+                <optgroup label="T-stykker (Cirkulær)"><option value="tee_sym">T-stykke, Symmetrisk</option><option value="tee_asym">T-stykke, Asymmetrisk</option><option value="tee_bullhead">T-stykke (Dobbelt Afgrening)</option></optgroup>
+            </select></div>
+            <div id="inlineFittingInputsContainer"></div>`;
+
+        document.getElementById('inlineFittingType').addEventListener('change', () => {
+            const fitContainer = document.getElementById('inlineFittingInputsContainer');
+            // We use our existing render logic, but need to pass the selected type since we use different IDs
+            const selectedType = document.getElementById('inlineFittingType').value;
+            if (selectedType) {
+                renderSystemFittingInputs(fitContainer, { type: selectedType });
+                // Override button
+                setTimeout(() => {
+                    const btn = fitContainer.querySelector('button');
+                    if (btn) btn.setAttribute('onclick', 'window.handleInlineComponentSubmit()');
+                }, 50);
+            } else {
+                fitContainer.innerHTML = '';
+            }
+        });
+
+    } else if (type === 'manualLoss') {
+        container.innerHTML = `
+            <div class="input-group"><label for="manualPressureLoss">Tryktab</label><div class="input-unit-wrapper" data-unit="Pa"><input type="text" id="manualPressureLoss" class="input-field" required></div></div>
+            <div class="input-group"><label for="manualDescription">Beskrivelse</label><input type="text" id="manualDescription" class="input-field" placeholder="f.eks. Spjæld, Rist, Filter"></div>
+        <button type="button" class="button primary" onclick="window.handleInlineComponentSubmit()">Tilføj til System</button>`;
+    }
+}
+
+// Expose handlers globally for inline HTML strings
+window.showAddForm = showAddForm;
+window.handleInlineComponentTypeChange = handleInlineComponentTypeChange;

@@ -66,16 +66,17 @@ export class ProjectManager {
         const project = this.projects[name];
         if (!project) throw new Error("Projektet findes ikke.");
 
-        // Load data into state manager
-        stateManager.resetState();
-        // Merge saved data into clean state structure to avoid missing keys if schema changed
-        // But for now, direct assignment or deep merge
-        Object.assign(stateManager.state, project.data);
-        stateManager.state.projectName = name; // Ensure name is set
+        // Hand off to central import routine which handles old and new structures
+        stateManager.importState(project.data);
+
+        // Ensure name is correct if not present in data
+        stateManager.state.projectName = name;
         stateManager.persist();
-        stateManager.notifyChange();
-        stateManager.history = []; // Clear history on load
-        stateManager.future = [];
+
+        // Refresh calculations and UI immediately
+        if (window.recalculateSystem) {
+            window.recalculateSystem();
+        }
     }
 
     deleteProject(name) {
