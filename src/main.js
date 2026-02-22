@@ -800,10 +800,10 @@ function recalculateSystem() {
                 heatLoss: 0
             };
         } else {
-            // Fittings - assume negligible heat loss due to short length for now
             const Q = incomingFlow / 3600;
             let inletDim, outletDim, v, zeta = 0, Pdyn_Pa = 0, A = 0, pressureLoss = 0, airflow_out = {}, temp_out = {};
             let calculationDetails = {};
+            let q_loss_val = 0;
 
             if (p.type === 'bend_circ') {
                 inletDim = outletDim = { shape: 'round', d: p.d };
@@ -814,7 +814,13 @@ function recalculateSystem() {
                 Pdyn_Pa = (RHO / 2) * v ** 2;
                 pressureLoss = zeta * Pdyn_Pa;
                 airflow_out = { 'outlet': incomingFlow };
-                temp_out = { 'outlet': incomingTemp };
+
+                const L_eff = 2 * Math.PI * (p.rd * p.d / 1000) * (p.angle / 360);
+                const perim_eff = Math.PI * (p.d / 1000);
+                const thermo = physics.calculateTemperatureDrop(incomingTemp, compAmbient, L_eff, perim_eff, q_m, isoThick, isoLambda);
+                temp_out = { 'outlet': thermo.t_out };
+                q_loss_val = thermo.q_loss;
+
                 calculationDetails = { A_m2: A, v_ms: v, zeta, Pdyn_Pa };
             } else if (p.type === 'bend_rect') {
                 inletDim = outletDim = { shape: 'rect', h: p.h, w: p.w };
@@ -828,7 +834,13 @@ function recalculateSystem() {
                 Pdyn_Pa = (RHO / 2) * v ** 2;
                 pressureLoss = zeta * Pdyn_Pa;
                 airflow_out = { 'outlet': incomingFlow };
-                temp_out = { 'outlet': incomingTemp };
+
+                const L_eff = 2 * Math.PI * (p.rh * p.w / 1000) * (p.angle / 360);
+                const perim_eff = 2 * (p.w / 1000 + p.h / 1000);
+                const thermo = physics.calculateTemperatureDrop(incomingTemp, compAmbient, L_eff, perim_eff, q_m, isoThick, isoLambda);
+                temp_out = { 'outlet': thermo.t_out };
+                q_loss_val = thermo.q_loss;
+
                 calculationDetails = { A_m2: A, v_ms: v, zeta, Pdyn_Pa };
             } else if (p.type === 'expansion' || p.type === 'contraction') {
                 const isExpansion = p.type === 'expansion';
@@ -844,26 +856,84 @@ function recalculateSystem() {
                 Pdyn_Pa = (RHO / 2) * v ** 2;
                 pressureLoss = zeta * Pdyn_Pa;
                 airflow_out = { 'outlet': incomingFlow };
-                temp_out = { 'outlet': incomingTemp };
+
+                const d1 = p.d1 / 1000, d2 = p.d2 / 1000;
+                const angleRad = (p.angle || 15) * Math.PI / 180;
+                let L_eff = Math.abs(d1 - d2) / 2 / Math.tan(angleRad / 2);
+                if (L_eff < 0.1 || isNaN(L_eff)) L_eff = 0.3;
+                const perim_eff = Math.PI * (d1 + d2) / 2;
+                const thermo = physics.calculateTemperatureDrop(incomingTemp, compAmbient, L_eff, perim_eff, q_m, isoThick, isoLambda);
+                temp_out = { 'outlet': thermo.t_out };
+                q_loss_val = thermo.q_loss;
+
                 calculationDetails = { A_m2: A, v_ms: v, zeta, Pdyn_Pa };
             } else if (p.type === 'tee_sym' || p.type === 'tee_asym') {
                 inletDim = { shape: 'round', d: p.d_in };
+
+                const L_in = p.d_in / 1000;
+                const perim_in = Math.PI * L_in;
+                const L_st = p.d_straight / 1000;
+                const perim_st = Math.PI * L_st;
+                const L_br = p.d_branch / 1000;
+                const perim_br = Math.PI * L_br;
+
                 if (p.flowType === 'splitting') {
+                    // Stage 1: Inlet body
+                    const thermo_in = physics.calculateTemperatureDrop(incomingTemp, compAmbient, L_in, perim_in, q_m, isoThick, isoLambda);
+                    const t_mid = thermo_in.t_out;
+                    let totalLoss = thermo_in.q_loss;
+
+                    // Stage 2: Straight branch
+                    const q_m_st = (p.q_straight / 3600) * RHO;
+                    const thermo_st = physics.calculateTemperatureDrop(t_mid, compAmbient, L_st, perim_st, q_m_st, isoThick, isoLambda);
+                    totalLoss += thermo_st.q_loss;
+
+                    // Stage 3: Angled branch
+                    const q_m_br = (p.q_branch / 3600) * RHO;
+                    const thermo_br = physics.calculateTemperatureDrop(t_mid, compAmbient, L_br, perim_br, q_m_br, isoThick, isoLambda);
+                    totalLoss += thermo_br.q_loss;
+
+                    q_loss_val = totalLoss;
+
                     const results = physics.calculateTeePressureLoss({ q_in: incomingFlow, q_straight: p.q_straight, q_branch: p.q_branch }, { d_in: p.d_in, d_straight: p.d_straight, d_branch: p.d_branch }, RHO);
                     if (p.path === 'straight') {
                         pressureLoss = results.loss_straight;
                         outletDim = { shape: 'round', d: p.d_straight };
                         airflow_out = { 'outlet_straight': p.q_straight, 'outlet_branch': p.q_branch, 'outlet': p.q_straight };
-                        temp_out = { 'outlet_straight': incomingTemp, 'outlet_branch': incomingTemp, 'outlet': incomingTemp };
+                        temp_out = { 'outlet_straight': thermo_st.t_out, 'outlet_branch': thermo_br.t_out, 'outlet': thermo_st.t_out };
                         calculationDetails = results.details_straight;
                     } else {
                         pressureLoss = results.loss_branch;
                         outletDim = { shape: 'round', d: p.d_branch };
                         airflow_out = { 'outlet_straight': p.q_straight, 'outlet_branch': p.q_branch, 'outlet': p.q_branch };
-                        temp_out = { 'outlet_straight': incomingTemp, 'outlet_branch': incomingTemp, 'outlet': incomingTemp };
+                        temp_out = { 'outlet_straight': thermo_st.t_out, 'outlet_branch': thermo_br.t_out, 'outlet': thermo_br.t_out };
                         calculationDetails = results.details_branch;
                     }
                 } else { // Merging
+                    // Air coming from the current sequence path receives incomingTemp, new added air starts at global temp
+                    const t_in_st = (p.path === 'straight') ? incomingTemp : temp;
+                    const t_in_br = (p.path === 'branch') ? incomingTemp : temp;
+
+                    // Calculate local density for accurate mass flow
+                    const rho_st = physics.getAirProperties(t_in_st).RHO;
+                    const rho_br = physics.getAirProperties(t_in_br).RHO;
+
+                    // Stage 1/2: Inlets
+                    const q_m_st = (p.q_straight / 3600) * rho_st;
+                    const thermo_st = physics.calculateTemperatureDrop(t_in_st, compAmbient, L_st, perim_st, q_m_st, isoThick, isoLambda);
+
+                    const q_m_br = (p.q_branch / 3600) * rho_br;
+                    const thermo_br = physics.calculateTemperatureDrop(t_in_br, compAmbient, L_br, perim_br, q_m_br, isoThick, isoLambda);
+
+                    // Mix at mid (Mass-weighted temperature average)
+                    const q_m_total = q_m_st + q_m_br;
+                    const t_mixed = q_m_total > 0 ? ((q_m_st * thermo_st.t_out + q_m_br * thermo_br.t_out) / q_m_total) : incomingTemp;
+
+                    // Stage 3: Outlet body
+                    const thermo_out = physics.calculateTemperatureDrop(t_mixed, compAmbient, L_in, perim_in, q_m, isoThick, isoLambda);
+
+                    q_loss_val = thermo_st.q_loss + thermo_br.q_loss + thermo_out.q_loss;
+
                     const results = physics.calculateConvergingTeePressureLoss({ q_straight: p.q_straight, q_branch: p.q_branch }, { d_common: p.d_in, d_straight: p.d_straight, d_branch: p.d_branch }, RHO);
                     if (p.path === 'straight') {
                         pressureLoss = results.loss_straight;
@@ -876,7 +946,7 @@ function recalculateSystem() {
                     }
                     outletDim = { shape: 'round', d: p.d_in };
                     airflow_out = { 'outlet': results.q_out };
-                    temp_out = { 'outlet': incomingTemp }; // Linear assumption: branches didn't cool differently yet
+                    temp_out = { 'outlet': thermo_out.t_out }; // Linear assumption: branches didn't cool differently yet
                 }
                 v = calculationDetails.v_ms || 0;
             }
@@ -892,7 +962,7 @@ function recalculateSystem() {
                 calculationDetails: calculationDetails,
                 temperature_in: incomingTemp,
                 temperature_out: temp_out,
-                heatLoss: 0
+                heatLoss: q_loss_val
             };
         }
 
@@ -981,6 +1051,14 @@ function handleAddComponent(event) {
 
     if (component) {
         component.id = 'node_' + Date.now();
+
+        // Sync global UI parameters to state so they aren't reverted by undo/redo/state changes
+        const flowTypeEl = document.querySelector('input[name="systemFlowType"]:checked');
+        const systemType = flowTypeEl ? flowTypeEl.value : 'splitting';
+        const projectName = document.getElementById('projectName') ? document.getElementById('projectName').value : '';
+        const startAirflowVal = document.getElementById('system_airflow') ? document.getElementById('system_airflow').value : '1000';
+        stateManager.setProjectParams({ systemType, startAirflow: startAirflowVal, projectName });
+
         // The old code had a currentAirflow tracking, but graph nodes shouldn't hardcode it. 
         // We will store currentAirflow in state so recalculateSystem has a starting point if it's the first node.
         if (!previousComponent) {

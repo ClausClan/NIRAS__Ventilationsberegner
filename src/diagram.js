@@ -9,7 +9,7 @@ let diagramSettings = {
     threshold: 0 // Will be auto-set if 0
 };
 
-function getColor(comp, mode, threshold) {
+function getColor(comp, mode, min, max) {
     if (mode === 'default') return '#00E4FF'; // Neon Blue
 
     // Logic specific to Pressure: Only Straight Ducts
@@ -19,20 +19,14 @@ function getColor(comp, mode, threshold) {
 
     // Helper for gradient (Blue -> Green -> Red)
     const getGradientColor = (t) => {
-        // t from 0 to 1
-        // 0 = Blue (0, 0, 255)
-        // 0.5 = Green (0, 255, 0)
-        // 1 = Red (255, 0, 0)
         t = Math.max(0, Math.min(1, t));
         let r, g, b;
         if (t < 0.5) {
-            // Blue to Green
             const p = t * 2;
             r = 0;
             g = Math.round(255 * p);
             b = Math.round(255 * (1 - p));
         } else {
-            // Green to Red
             const p = (t - 0.5) * 2;
             r = Math.round(255 * p);
             g = Math.round(255 * (1 - p));
@@ -42,11 +36,9 @@ function getColor(comp, mode, threshold) {
     };
 
     let val = 0;
-    let max = threshold || 1;
 
     if (mode === 'velocity') {
         val = comp.state?.velocity || 0;
-        if (max === 0) max = 10; // Default fallback
     }
     else if (mode === 'pressure') {
         val = comp.state?.pressureLoss || 0;
@@ -55,7 +47,6 @@ function getColor(comp, mode, threshold) {
         } else {
             val = 0;
         }
-        if (max === 0) max = 1; // Default fallback
     }
 
     if (mode === 'temperature') {
@@ -76,44 +67,29 @@ function getColor(comp, mode, threshold) {
         };
 
         val = comp.state?.temperature_out?.outlet || comp.state?.temperature_out?.outlet_straight || comp.state?.temperature_in || 20;
-        const tempMin = 5; // Fixed base for visualization
-        if (max === 0) max = 30; // Default max temp
-        if (max <= tempMin) max = tempMin + 1;
 
-        const normalized = (val - tempMin) / (max - tempMin);
+        let range = max - min;
+        if (range <= 0) range = 1;
+        const normalized = (val - min) / range;
         return getTemperatureGradient(normalized);
     }
 
-    return getGradientColor(val / max);
+    let range = max - min;
+    if (range <= 0) range = 1;
+    const normalized = (val - min) / range;
+    return getGradientColor(normalized);
 }
 
 // Global update function to handle control changes without full re-creation if possible
 window.updateDiagramSettings = () => {
     const colorMode = document.getElementById('diagramColorMode').value;
     const labelMode = document.getElementById('diagramLabelMode').value;
-    const slider = document.getElementById('colorThresholdSlider');
-    const threshold = parseFloat(slider.value);
 
     diagramSettings.colorMode = colorMode;
     diagramSettings.labelMode = labelMode;
-    diagramSettings.threshold = threshold;
 
-    // Update Slider Label
-    document.getElementById('thresholdVal').textContent = threshold;
-
-    // Identify Units
-    let unit = '';
-    if (colorMode === 'velocity') unit = 'm/s';
-    else if (colorMode === 'pressure') unit = 'Pa/m';
-    else if (colorMode === 'temperature') unit = '°C';
-    document.getElementById('thresholdUnit').textContent = unit;
-
-    // Show/Hide Slider
-    const sliderContainer = document.getElementById('sliderContainer');
-    if (colorMode === 'default') sliderContainer.classList.add('hidden');
-    else sliderContainer.classList.remove('hidden');
-
-    renderDiagram(true); // Re-render content only
+    // Identify Units and Re-render
+    renderDiagram(true);
 };
 
 export function renderDiagram(keepControls = false) {
@@ -126,46 +102,66 @@ export function renderDiagram(keepControls = false) {
         return;
     }
 
-    // Determine Max Values for Sliders if not set
-    let maxV = 0;
-    let maxP = 0;
-    let maxT = 0;
-    components.forEach(c => {
+    // Determine Min/Max Values for Legend
+    let maxV = -Infinity, minV = Infinity;
+    let maxP = -Infinity, minP = Infinity;
+    let maxT = -Infinity, minT = Infinity;
+
+    components.forEach((c) => {
         let v = c.state?.velocity || 0;
-        let pDrop = c.state?.calculationDetails?.pressureDrop || 0;
-        let t = c.state?.temperature_in || 20;
+        let pDrop = c.type === 'straightDuct' ? (c.state?.calculationDetails?.pressureDrop || 0) : 0;
+        let t_in = c.state?.temperature_in !== undefined ? c.state.temperature_in : 20;
+        let t_out = c.state?.temperature_out?.outlet || c.state?.temperature_out?.outlet_straight || t_in;
+
         if (v > maxV) maxV = v;
-        if (c.type === 'straightDuct' && pDrop > maxP) maxP = pDrop;
-        if (t > maxT) maxT = t;
+        if (v < minV) minV = v;
+
+        if (c.type === 'straightDuct') {
+            if (pDrop > maxP) maxP = pDrop;
+            if (pDrop < minP) minP = pDrop;
+        }
+
+        if (t_in > maxT) maxT = t_in;
+        if (t_in < minT) minT = t_in;
+        if (t_out > maxT) maxT = t_out;
+        if (t_out < minT) minT = t_out;
     });
-    // Round up
-    maxV = Math.ceil(maxV * 2) / 2;
-    maxP = Math.ceil(maxP * 2) / 2;
-    maxT = Math.ceil(maxT / 5) * 5;
-    if (maxV === 0) maxV = 10;
-    if (maxP === 0) maxP = 2;
-    if (maxT === 0) maxT = 30;
 
-    // If switching modes, update threshold defaults?
-    // Start with a reasonable default if 0
+    if (maxV === -Infinity) { maxV = 10; minV = 0; }
+    if (maxP === -Infinity) { maxP = 2; minP = 0; }
+    if (maxT === -Infinity) { maxT = 30; minT = 5; }
+
+    let currentMin = 0;
     let currentMax = 10;
-    if (diagramSettings.colorMode === 'velocity') currentMax = maxV;
-    if (diagramSettings.colorMode === 'pressure') currentMax = maxP;
-    if (diagramSettings.colorMode === 'temperature') currentMax = maxT;
+    let legendLabel = '';
+    let gradientCss = '';
 
-    // Use user threshold if set and valid for current mode? 
-    // It's tricky to share threshold between modes.
-    // Let's reset threshold when mode changes? handled in UI by reading slider, but logic here needs to be robust.
+    if (diagramSettings.colorMode === 'velocity') {
+        currentMin = minV; currentMax = maxV;
+        legendLabel = 'Hastighed (m/s)';
+        gradientCss = 'linear-gradient(to right, rgb(0,0,255), rgb(0,255,0), rgb(255,0,0))';
+    } else if (diagramSettings.colorMode === 'pressure') {
+        currentMin = minP; currentMax = maxP;
+        legendLabel = 'Tryktab (Pa/m)';
+        gradientCss = 'linear-gradient(to right, rgb(0,0,255), rgb(0,255,0), rgb(255,0,0))';
+    } else if (diagramSettings.colorMode === 'temperature') {
+        currentMin = minT; currentMax = maxT;
+        legendLabel = 'Temperatur (°C)';
+        gradientCss = 'linear-gradient(to right, rgb(0,0,255), rgb(0,150,255), rgb(255,255,0), rgb(255,0,0))';
+    }
 
-    // If we re-render, we use settings.
-    // If keepControls is true, we assume DOM controls match settings.
+    if (currentMax === currentMin) currentMax = currentMin + 1; // Prevent zero-width range calculation issues
+
+    const formatVal = (val) => Number.isInteger(val) ? val.toString() : val.toFixed(2);
 
     // Generate Controls HTML
     const controlsHtml = `
     <style>
         .diagram-menu { transition: max-height 0.3s ease-out; overflow: hidden; max-height: 500px; display: flex; flex-direction: column; gap: 8px; margin-top: 5px; }
         .diagram-menu.minimized { max-height: 0px; margin-top: 0px; }
-        .diagram-overlay-container { position: absolute; top: 10px; right: 10px; background: rgba(0,0,0,0.8); padding: 10px; border-radius: 8px; color: #fff; z-index: 100; min-width: 160px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); font-size: 0.85rem; }
+        .diagram-overlay-container { position: absolute; top: 10px; right: 10px; background: rgba(0,0,0,0.8); padding: 10px; border-radius: 8px; color: #fff; z-index: 100; min-width: 170px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); font-size: 0.85rem; }
+        .diagram-legend-container { position: absolute; bottom: 20px; left: 20px; background: rgba(0,0,0,0.8); padding: 10px 15px; border-radius: 8px; color: #fff; z-index: 100; min-width: 200px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); font-size: 0.85rem; }
+        .legend-bar { height: 12px; width: 100%; border-radius: 4px; border: 1px solid rgba(255,255,255,0.2); }
     </style>
     <div id="diagramOverlayControls" class="diagram-overlay-container">
          <div style="display:flex; justify-content:space-between; align-items:center; cursor:pointer;" onclick="document.getElementById('diagramMenuContent').classList.toggle('minimized'); this.querySelector('span').textContent = document.getElementById('diagramMenuContent').classList.contains('minimized') ? '▼' : '▲';">
@@ -186,19 +182,15 @@ export function renderDiagram(keepControls = false) {
              </select>
              
              <button class="button" style="width: 100%; font-size: 0.8rem; padding: 2px;" onclick="window.resetDiagramZoom()">Zoom Alle</button>
-             
-             <div id="sliderContainer" class="${diagramSettings.colorMode === 'default' ? 'hidden' : ''}">
-                 <label style="font-size: 11px; display:block; margin-top:5px; margin-bottom:3px;">
-                     Maks: <span id="thresholdVal">${diagramSettings.threshold || currentMax}</span> <span id="thresholdUnit">${diagramSettings.colorMode === 'velocity' ? 'm/s' : (diagramSettings.colorMode === 'pressure' ? 'Pa/m' : '°C')}</span>
-                 </label>
-                 <input type="range" id="colorThresholdSlider" 
-                        min="0" 
-                        max="${diagramSettings.colorMode === 'velocity' ? 10 : (diagramSettings.colorMode === 'pressure' ? 5 : 40)}" 
-                        step="${diagramSettings.colorMode === 'temperature' ? 1 : 0.1}" 
-                        value="${diagramSettings.threshold || currentMax}" 
-                        style="width: 100%; accent-color: #00E4FF;"
-                        oninput="document.getElementById('thresholdVal').textContent = this.value; window.updateDiagramSettings();">
-             </div>
+         </div>
+    </div>
+    
+    <div id="diagramLegend" class="diagram-legend-container ${diagramSettings.colorMode === 'default' ? 'hidden' : ''}">
+         <strong style="font-size: 12px; display:block; margin-bottom: 8px; text-align: center;">${legendLabel}</strong>
+         <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+             <span style="font-size: 12px; font-variant-numeric: tabular-nums;">${formatVal(currentMin)}</span>
+             <div class="legend-bar" style="background: ${gradientCss}; flex-grow: 1;"></div>
+             <span style="font-size: 12px; font-variant-numeric: tabular-nums;">${formatVal(currentMax)}</span>
          </div>
     </div>
     `;
@@ -229,54 +221,102 @@ export function renderDiagram(keepControls = false) {
     };
     updateBounds(x, y);
 
+    const drawFlowIndicator = (cx, cy, offsetDx, offsetDy, pointDx, pointDy, flow, isTempMode = false, temp = null) => {
+        const size = 8;
+        const dist = 30; // Distance from duct end increased slightly for wider text
+
+        const ax = cx + offsetDx * dist;
+        const ay = cy + offsetDy * dist;
+
+        const tipX = ax + pointDx * size;
+        const tipY = ay + pointDy * size;
+        const backX = ax - pointDx * size;
+        const backY = ay - pointDy * size;
+
+        const pDx = -pointDy;
+        const pDy = pointDx;
+
+        const leftX = backX + pDx * size;
+        const leftY = backY + pDy * size;
+        const rightX = backX - pDx * size;
+        const rightY = backY - pDy * size;
+
+        const lx = ax + offsetDx * 25;
+        const ly = ay + offsetDy * 25;
+
+        let text = `${Math.round(flow)} m³/h`;
+        if (isTempMode && temp !== null) {
+            text = `${temp.toFixed(1)}°C | ` + text;
+        }
+
+        return `
+            <polygon points="${tipX},${tipY} ${leftX},${leftY} ${rightX},${rightY}" fill="#00E5FF" />
+            <text x="${lx}" y="${ly}" fill="#00E5FF" font-size="12" font-weight="bold" text-anchor="middle" dominant-baseline="middle" text-shadow="0px 0px 4px #000">${text}</text>
+        `;
+    };
+
     let startAirflow = components[0].state?.airflow_in || components[0].airflow;
     svgContent += `
         <circle cx="${x}" cy="${y}" r="6" fill="#fff" />
-        <text x="${x + 15}" y="${y + 5}" fill="#fff" font-size="12">Start: ${startAirflow ? Math.round(startAirflow) : '?'} m³/h</text>
+        <text x="${x + 15}" y="${y + 5}" fill="#fff" font-size="12">Start</text>
     `;
+
+    // Global Start Arrow (Air enters system at index 0)
+    const initRad = currentAngle * Math.PI / 180;
+    const initDir = { x: Math.cos(initRad), y: Math.sin(initRad) };
+    const isTempMode = diagramSettings.colorMode === 'temperature';
+    if (startAirflow) {
+        let startTemp = components[0].state?.temperature_in !== undefined ? components[0].state.temperature_in : 20;
+        svgContent += drawFlowIndicator(x, y, -initDir.x, -initDir.y, initDir.x, initDir.y, startAirflow, isTempMode, startTemp);
+    }
 
     components.forEach((comp, index) => {
         const rad = currentAngle * Math.PI / 180;
         const dir = { x: Math.cos(rad), y: Math.sin(rad) };
         const perp = { x: -dir.y, y: dir.x }; // Perpendicular vector (Left relative to flow)
 
-        const strokeColor = getColor(comp, diagramSettings.colorMode, diagramSettings.threshold || currentMax);
+        const strokeColor = getColor(comp, diagramSettings.colorMode, currentMin, currentMax);
+
+        // Calculate visual width based on component physical dimensions
+        let currentW = 12; // Default fallback half-width
+        const dim = comp.state?.inletDimension || comp.state?.outletDimension?.outlet || comp.state?.outletDimension?.straight;
+        if (dim && dim.d) currentW = dim.d / 20; // Scale: 250mm -> 12.5px half-width -> 25px total -> 100 pixels per meter
+        else if (dim && dim.w) currentW = dim.w / 20;
 
         // --- 1. Determine Component Visuals & Movement ---
 
+        const PIXELS_PER_METER = 100;
         let moveDistance = gridStep;
         let turnAngle = 0; // Degrees to turn AFTER this component
 
-        // Logic for turning
+        // Logic for turning and scaling lengths
         let isBend = comp.type.startsWith('bend') || comp.type === 'transition_round_rect' || comp.type === 'transition_rect_round';
         if (isBend) {
-            // Check angle (default 90)
             const bendAngle = comp.properties?.angle || 90;
-            // Alternating Left/Right turns for zig-zag simulation if we don't have explicit direction
-            // We use index to make it predictable: Even index bends turn right (+), Odd turns left (-)
             const turnDir = (index % 2 === 0) ? -1 : 1;
             turnAngle = bendAngle * turnDir;
-            // Reduce move distance for bends to make them look like corners
-            moveDistance = gridStep * 0.6;
+            moveDistance = Math.max(60, currentW * 3); // Base curve size on width
         }
         else if (comp.type.includes('tee')) {
             const chosenPath = comp.state?.calculationDetails?.chosenPath || comp.properties?.path;
-            const bendAngle = 90; // Default T branch angle
+            const bendAngle = 90;
             if (chosenPath === 'branch' || chosenPath === 'path2') {
                 const turnDir = (index % 2 === 0) ? -1 : 1;
                 turnAngle = bendAngle * turnDir;
             }
+            moveDistance = Math.max(80, currentW * 4); // T-pieces are relatively large
+        }
+        else if (comp.type === 'straightDuct') {
+            const length_m = comp.properties?.length || 1;
+            moveDistance = Math.max(40, length_m * PIXELS_PER_METER); // True scale relative to 100px/m
+        }
+        else {
+            moveDistance = Math.max(80, currentW * 3); // Default for other fittings
         }
 
         // Calculate End Position along CURRENT trajectory (before the turn takes effect for the NEXT component)
         let nextX = x + (dir.x * moveDistance);
         let nextY = y + (dir.y * moveDistance);
-
-        // Calculate visual width based on component physical dimensions
-        let currentW = 12; // Default fallback half-width
-        const dim = comp.state?.inletDimension || comp.state?.outletDimension?.outlet || comp.state?.outletDimension?.straight;
-        if (dim && dim.d) currentW = dim.d / 20; // 250mm -> 12.5px
-        else if (dim && dim.w) currentW = dim.w / 20;
 
         // --- 2. Draw Connection ---
 
@@ -308,8 +348,33 @@ export function renderDiagram(keepControls = false) {
             const p3 = { x: nextX - perp.x * w, y: nextY - perp.y * w };
             const p4 = { x: x - perp.x * w, y: y - perp.y * w };
 
+            let currentStrokeColor = strokeColor;
+            let currentFillColor = volColor;
+            let currentFillOpacity = volOpacity;
+            let defsHtml = '';
+
+            // Apply SVG Linear Gradient if in temperature mode
+            if (diagramSettings.colorMode === 'temperature') {
+                const t_in = comp.state?.temperature_in !== undefined ? comp.state.temperature_in : 20;
+                const t_out = comp.state?.temperature_out?.outlet !== undefined ? comp.state.temperature_out.outlet : t_in;
+
+                const colorStart = getColor({ state: { temperature_in: t_in } }, 'temperature', currentMin, currentMax);
+                const colorEnd = getColor({ state: { temperature_in: t_out } }, 'temperature', currentMin, currentMax);
+
+                const gradId = `grad_${comp.id || index}`;
+                defsHtml = `<linearGradient id="${gradId}" x1="${x}" y1="${y}" x2="${nextX}" y2="${nextY}" gradientUnits="userSpaceOnUse">
+                    <stop offset="0%" stop-color="${colorStart}" />
+                    <stop offset="100%" stop-color="${colorEnd}" />
+                </linearGradient>`;
+
+                icon += defsHtml;
+                currentStrokeColor = `url(#${gradId})`;
+                currentFillColor = `url(#${gradId})`;
+                currentFillOpacity = "0.5"; // Slightly more opaque to see gradient better
+            }
+
             // Draw Fill for Color Mode
-            icon += `<polygon points="${p1.x},${p1.y} ${p2.x},${p2.y} ${p3.x},${p3.y} ${p4.x},${p4.y}" fill="${volColor}" fill-opacity="${volOpacity}" stroke="${strokeColor}" stroke-width="2" />`;
+            icon += `<polygon points="${p1.x},${p1.y} ${p2.x},${p2.y} ${p3.x},${p3.y} ${p4.x},${p4.y}" fill="${currentFillColor}" fill-opacity="${currentFillOpacity}" stroke="${currentStrokeColor}" stroke-width="2" />`;
             label = `Lige Kanal`;
         }
         else if (isBend) {
@@ -351,14 +416,27 @@ export function renderDiagram(keepControls = false) {
                 icon += `<line x1="${midX}" y1="${midY}" x2="${nextX}" y2="${nextY}" stroke="${volColor}" stroke-width="${currentW * 2}" stroke-opacity="${volOpacity}" stroke-linecap="butt" />`;
                 icon += `<line x1="${midX}" y1="${midY}" x2="${nextX}" y2="${nextY}" stroke="${strokeColor}" stroke-width="2" />`;
 
-                // Unused Branch (dashed)
                 const branchTurn = (index % 2 === 0) ? -90 : 90;
                 const branchRad = (currentAngle + branchTurn) * Math.PI / 180;
-                const branchX = midX + (Math.cos(branchRad) * stubLen);
-                const branchY = midY + (Math.sin(branchRad) * stubLen);
+                const bDx = Math.cos(branchRad);
+                const bDy = Math.sin(branchRad);
+                const branchX = midX + (bDx * stubLen);
+                const branchY = midY + (bDy * stubLen);
 
                 icon += `<line x1="${midX}" y1="${midY}" x2="${branchX}" y2="${branchY}" stroke="${volColor}" stroke-width="${currentW * 2}" stroke-opacity="${volOpacity}" stroke-linecap="butt" />`;
                 icon += `<line x1="${midX}" y1="${midY}" x2="${branchX}" y2="${branchY}" stroke="${branchColor}" stroke-width="2" stroke-dasharray="4"/>`;
+
+                // Draw Arrow for unused branch
+                if (comp.properties?.q_branch) {
+                    const isMerging = window.appState ? window.appState.systemType === 'merging' : false; // Fallback, we should just read from comp
+                    const flowType = comp.properties.flowType || (window.appState ? window.appState.systemType : 'splitting');
+                    const branchTemp = comp.state?.temperature_out?.outlet_branch !== undefined ? comp.state.temperature_out.outlet_branch : (comp.state?.temperature_in || 20);
+                    if (flowType === 'splitting') {
+                        icon += drawFlowIndicator(branchX, branchY, bDx, bDy, bDx, bDy, comp.properties.q_branch, isTempMode, branchTemp);
+                    } else {
+                        icon += drawFlowIndicator(branchX, branchY, bDx, bDy, -bDx, -bDy, comp.properties.q_branch, isTempMode, branchTemp);
+                    }
+                }
             } else {
                 // Active path: Branch. Unused path: Straight
                 const branchRad = (currentAngle + turnAngle) * Math.PI / 180;
@@ -370,11 +448,24 @@ export function renderDiagram(keepControls = false) {
                 icon += `<line x1="${midX}" y1="${midY}" x2="${nextX}" y2="${nextY}" stroke="${strokeColor}" stroke-width="2" />`;
 
                 // Unused Straight (dashed)
-                const straightX = midX + (dir.x * stubLen);
-                const straightY = midY + (dir.y * stubLen);
+                const sDx = dir.x;
+                const sDy = dir.y;
+                const straightX = midX + (sDx * stubLen);
+                const straightY = midY + (sDy * stubLen);
 
                 icon += `<line x1="${midX}" y1="${midY}" x2="${straightX}" y2="${straightY}" stroke="${volColor}" stroke-width="${currentW * 2}" stroke-opacity="${volOpacity}" stroke-linecap="butt" />`;
                 icon += `<line x1="${midX}" y1="${midY}" x2="${straightX}" y2="${straightY}" stroke="${branchColor}" stroke-width="2" stroke-dasharray="4"/>`;
+
+                // Draw Arrow for unused straight
+                if (comp.properties?.q_straight) {
+                    const flowType = comp.properties.flowType || (window.appState ? window.appState.systemType : 'splitting');
+                    const straightTemp = comp.state?.temperature_out?.outlet_straight !== undefined ? comp.state.temperature_out.outlet_straight : (comp.state?.temperature_in || 20);
+                    if (flowType === 'splitting') {
+                        icon += drawFlowIndicator(straightX, straightY, sDx, sDy, sDx, sDy, comp.properties.q_straight, isTempMode, straightTemp);
+                    } else {
+                        icon += drawFlowIndicator(straightX, straightY, sDx, sDy, -sDx, -sDy, comp.properties.q_straight, isTempMode, straightTemp);
+                    }
+                }
             }
             label = `T - stykke`;
         }
@@ -418,6 +509,25 @@ export function renderDiagram(keepControls = false) {
 
         // Add Node Dot at end
         icon += `<circle cx="${nextX}" cy="${nextY}" r="4" fill="#16213E" stroke="${strokeColor}" stroke-width="2" />`;
+
+        // Global End Arrow (Air leaves system at last component)
+        if (index === components.length - 1) {
+            let endFlow = comp.state?.airflow_out?.outlet || comp.state?.airflow_out?.outlet_straight || comp.state?.airflow_out?.outlet_branch || comp.airflow || 0;
+
+            // Re-calculate the final direction because Bends change it before the END of their own drawing
+            let finalRad = currentAngle * Math.PI / 180;
+            if (isBend || comp.type.includes('tee')) {
+                finalRad = (currentAngle + turnAngle) * Math.PI / 180;
+            }
+            const fDx = Math.cos(finalRad);
+            const fDy = Math.sin(finalRad);
+
+            if (endFlow) {
+                const endTemp = comp.state?.temperature_out?.outlet || comp.state?.temperature_out?.outlet_straight || comp.state?.temperature_in || 20;
+                icon += drawFlowIndicator(nextX, nextY, fDx, fDy, fDx, fDy, endFlow, isTempMode, endTemp);
+                updateBounds(nextX + fDx * 50, nextY + fDy * 50); // Expand bounds for arrow
+            }
+        }
 
         svgContent += icon;
 
