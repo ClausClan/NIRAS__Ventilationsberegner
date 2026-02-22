@@ -1,27 +1,26 @@
 // Main application logic - Cache Bust 1
 import { parseLocalFloat, getInternalDim, formatLocalFloat } from './utils.js';
 import * as physics from './physics.js';
+import * as ui from './ui.js';
 import {
-    stateManager,
-    addSystemComponent,
-    removeFitting,
-    resetFittings,
-    getSystemComponents,
-    removeLastSystemComponent,
-    clearSystem,
-    setSystemComponents,
-    getSystemComponent,
-    undo,
-    redo,
-    canUndo,
-    canRedo,
-    addFitting,
-    getCorrectionTargetId,
-    setCorrectionTargetId,
-    setDuctResult
+    getDimFormHtml, getFittingsFormHtml, getProjectModalHtml, getSystemFormHtml,
+    renderDuctResult, renderFittingsResult, renderSystem,
+    showDuctDetails, showFittingDetails, showSystemComponentDetails, showHelpModal,
+    updateFittingTypeOptions, renderFittingInputs, handleComponentTypeChange, renderSystemFittingInputs,
+    toggleSystemMenu, printDocumentation, updateDimUI, updateConstraintDefaults, populateDatalists, showConfirm, updateUndoRedoUI, showSaveStatus,
+    showEditForm
+} from './ui.js';
+
+import {
+    addSystemComponent, deleteSystemComponent,
+    undo, redo,
+    updateSystemComponent, stateManager, removeFitting, resetFittings, getSystemComponents, removeLastSystemComponent, clearSystem, setSystemComponents, getSystemComponent, canUndo, canRedo, addFitting, getCorrectionTargetId, setCorrectionTargetId, setDuctResult
 } from './app_state.js';
 import { projectManager } from './projects.js';
-import * as ui from './ui.js';
+import { toggleDiagramView, renderDiagram } from './diagram.js';
+
+window.toggleDiagramView = toggleDiagramView;
+window.renderDiagram = renderDiagram;
 
 // --- Global Scope for UI interactions ---
 window.toggleSystemMenu = ui.toggleSystemMenu;
@@ -55,6 +54,15 @@ function handleRedo() {
 window.addEventListener('stateChanged', () => {
     ui.updateUndoRedoUI(canUndo(), canRedo());
     ui.showSaveStatus('Gemt', 'saved');
+
+    // Update Global Inputs from State (for Load/Undo/Redo)
+    const state = stateManager.state;
+    if (state.projectName) document.getElementById('projectName').value = state.projectName;
+    if (state.startAirflow) document.getElementById('system_airflow').value = state.startAirflow;
+    if (state.systemType) {
+        const radio = document.querySelector(`input[name="systemFlowType"][value="${state.systemType}"]`);
+        if (radio) radio.checked = true;
+    }
 });
 
 // Keyboard Shortcuts
@@ -79,6 +87,57 @@ window.handleDeleteLastComponent = () => {
     removeLastSystemComponent();
     ui.renderSystem();
     ui.handleComponentTypeChange(); // Update inputs (e.g. valid options based on new last component)
+};
+
+window.handleDeleteComponent = (id) => {
+    showConfirm("Er du sikker på, at du vil slette denne komponent? Dette kan påvirke efterfølgende beregninger.", () => {
+        deleteSystemComponent(id);
+        recalculateSystem(); // Recalculate transitions after deletion
+        updateUndoRedoUI(canUndo(), canRedo()); // Antager undo er mulig efter slet
+        showSaveStatus('Ændringer gemt');
+    });
+};
+
+window.handleEditComponent = (id) => {
+    showEditForm(id);
+};
+
+window.handleUpdateComponent = (id) => {
+    const component = getSystemComponent(id);
+    if (!component) return;
+
+    const suffix = '_edit';
+    let newData = null;
+
+    if (component.type === 'straightDuct') {
+        newData = getDuctData(suffix);
+    } else if (component.type === 'manualLoss') {
+        const name = document.getElementById('manualDescription' + suffix).value;
+        const pressureLoss = parseLocalFloat(document.getElementById('manualPressureLoss' + suffix).value);
+        newData = {
+            type: 'manualLoss',
+            name,
+            properties: { pressureLoss },
+            state: {}
+        };
+    } else {
+        // Fittings
+        newData = getFittingData(suffix, component.type);
+    }
+
+    if (newData) {
+        // Preserve ID
+        newData.id = id;
+
+        // Preserve the topological properties from original component
+        // which haven't been touched by simple edit yet (we are linear right now)
+        newData.inputs = component.inputs;
+        newData.outputs = component.outputs;
+
+        updateSystemComponent(id, newData); // Update in state
+        ui.showSaveStatus('Komponent opdateret');
+        recalculateSystem(); // Trigger full recalculation and transition update
+    }
 };
 
 // Event Handlers for Global Actions (using showConfirm)
@@ -358,297 +417,596 @@ function handleFittingCalculation(event) {
     }
 }
 
-function handleAddComponent(event) {
-    event.preventDefault();
-    const systemComponents = getSystemComponents();
+// Helper to create a transition component
+function createTransitionComponent(lastOutlet, newInlet, airflow, globalFlowType, previousComponent) {
+    if (!lastOutlet || !newInlet) return null;
 
-    // --- 1. HENT AKTUELLE SYSTEMDATA ---
-    const startAirflow = parseLocalFloat(document.getElementById('system_airflow').value);
-    if (isNaN(startAirflow) || startAirflow <= 0) {
-        alert('Udfyld venligst en gyldig Start Luftmængde.');
-        return;
+    let needsTransition = false;
+
+    if (lastOutlet.shape === 'round' && newInlet.shape === 'round') {
+        if (lastOutlet.d !== newInlet.d) needsTransition = true;
+    } else if (lastOutlet.shape === 'rect' && newInlet.shape === 'rect') {
+        if (lastOutlet.h !== newInlet.h || lastOutlet.w !== newInlet.w) needsTransition = true;
+    } else if (lastOutlet.shape !== newInlet.shape) {
+        needsTransition = true;
     }
 
-    const lastComponent = systemComponents.length > 0 ? systemComponents[systemComponents.length - 1] : null;
-    const airflow = lastComponent ? lastComponent.newAirflowAfter : startAirflow;
+    if (!needsTransition) return null;
 
+    // Calc Properties
     const temp = parseLocalFloat(document.getElementById('temperature').value);
-    if (isNaN(temp)) { alert('Udfyld venligst en gyldig global Temperatur.'); return; }
-
     const { RHO, NU } = physics.getAirProperties(temp);
     const Q = airflow / 3600;
 
-    const componentType = document.getElementById('systemComponentType').value;
-    const globalFlowType = document.querySelector('input[name="systemFlowType"]:checked').value;
+    let A1, A2, d1, d2, h1, w1, h2, w2, type, name, details;
+    let isEstimated = false;
+    const angle = 30; // Standard 30 grader
 
-    const correctionTargetId = getCorrectionTargetId();
+    if (lastOutlet.shape === 'round') { A1 = Math.PI * (getInternalDim(lastOutlet.d) / 2000) ** 2; d1 = lastOutlet.d; }
+    else { A1 = (getInternalDim(lastOutlet.h) / 1000) * (getInternalDim(lastOutlet.w) / 1000); h1 = lastOutlet.h; w1 = lastOutlet.w; }
+    if (newInlet.shape === 'round') { A2 = Math.PI * (getInternalDim(newInlet.d) / 2000) ** 2; d2 = newInlet.d; }
+    else { A2 = (getInternalDim(newInlet.h) / 1000) * (getInternalDim(newInlet.w) / 1000); h2 = newInlet.h; w2 = newInlet.w; }
 
-    try {
-        // --- HJÆLPEFUNKTION TIL AUTOMATISKE OVERGANGE ---
-        const addTransitionIfNeeded = (newComponentInletDimension) => {
-            if (!lastComponent || !lastComponent.outletDimension || !newComponentInletDimension) return;
+    const isExpansion = A2 > A1;
+    const area_ratio = A1 / A2;
+    let zeta_table;
 
-            const lastOutlet = lastComponent.outletDimension;
-            const newInlet = newComponentInletDimension;
-            let needsTransition = false;
+    // Logic to choose table based on types
+    if (lastOutlet.shape === 'round' && newInlet.shape === 'rect') {
+        type = 'transition_round_rect'; name = 'OBS: Overgang (auto)'; details = `fra Ø${d1} til ${h2}x${w2}`;
+        if (globalFlowType === 'merging') zeta_table = physics.ROUND_TO_RECT_EXHAUST_ZETA;
+        else { zeta_table = isExpansion ? physics.EXPANSION_ZETA : physics.CONTRACTION_ZETA; isEstimated = true; }
+    } else if (lastOutlet.shape === 'rect' && newInlet.shape === 'round') {
+        type = 'transition_rect_round'; name = 'OBS: Overgang (auto)'; details = `fra ${h1}x${w1} til Ø${d2}`;
+        if (globalFlowType === 'splitting') zeta_table = physics.RECT_TO_ROUND_SUPPLY_ZETA;
+        else { zeta_table = isExpansion ? physics.EXPANSION_ZETA : physics.CONTRACTION_ZETA; isEstimated = true; }
+    } else if (lastOutlet.shape === 'round' && newInlet.shape === 'round') {
+        type = isExpansion ? 'expansion' : 'contraction';
+        zeta_table = isExpansion ? physics.EXPANSION_ZETA : physics.CONTRACTION_ZETA;
+        name = isExpansion ? 'OBS: Udvidelse (auto)' : 'OBS: Indsnævring (auto)'; details = `fra Ø${d1} til Ø${d2}`;
+    } else { // rect to rect
+        type = isExpansion ? 'expansion_rect' : 'contraction_rect';
+        zeta_table = isExpansion ? physics.RECT_EXPANSION_ZETA : physics.RECT_CONTRACTION_ZETA;
+        name = isExpansion ? 'OBS: Udvidelse (auto)' : 'OBS: Indsnævring (auto)'; details = `fra ${h1}x${w1} til ${h2}x${w2}`;
+    }
 
-            if (lastOutlet.shape === 'round' && newInlet.shape === 'round') {
-                if (lastOutlet.d !== newInlet.d) needsTransition = true;
-            } else if (lastOutlet.shape === 'rect' && newInlet.shape === 'rect') {
-                if (lastOutlet.h !== newInlet.h || lastOutlet.w !== newInlet.w) needsTransition = true;
-            } else if (lastOutlet.shape !== newInlet.shape) {
-                needsTransition = true;
+    if (isEstimated) details += ' (Estimeret)';
+
+    const zeta = physics.interpolateValue(angle, area_ratio, zeta_table);
+    const A_ref = isExpansion ? A1 : A2;
+    const v = Q / A_ref;
+    const Pdyn_Pa = (RHO / 2) * v ** 2;
+    const pressureLoss = zeta * Pdyn_Pa;
+
+    // Generate unique ID
+    const uniqueId = 'transition_' + Date.now() + Math.floor(Math.random() * 1000);
+
+    const transitionComponent = {
+        id: uniqueId,
+        type: type,
+        name: name,
+        details: details,
+        isAutoGenerated: true,
+        properties: {
+            angle,
+            area_ratio,
+            isEstimated,
+            inletShape: lastOutlet.shape,
+            outletShape: newInlet.shape
+        },
+        state: {
+            airflow_in: airflow,
+            airflow_out: { 'outlet': airflow },
+            velocity: v,
+            pressureLoss: pressureLoss,
+            zeta: zeta,
+            calculationDetails: { Q_m3s: Q, A_m2: A_ref, v_ms: v, zeta: zeta, Pdyn_Pa: Pdyn_Pa, type: type, angle: angle },
+            outletDimension: { 'outlet': newInlet },
+            inletDimension: lastOutlet
+        }
+    };
+
+    return transitionComponent;
+}
+
+// Helper to read inputs and create component object
+function createComponentFromInputs(suffix = '', previousComponent = null) {
+    const s = (id) => {
+        const el = document.getElementById(id + suffix);
+        return el ? el.value : '';
+    };
+    const f = (id) => parseLocalFloat(s(id));
+    const radio = (name) => {
+        const el = document.querySelector(`input[name="${name}${suffix}"]:checked`);
+        return el ? el.value : null;
+    };
+
+    // Determine type - for Add it's from the main select, for Edit we need to infer or pass it?
+    // For now, assume if suffix is empty, we use main select.
+    // If suffix is '_edit', we might need to look at what's rendered. 
+    // BUT 'systemComponentType' ID is not suffixed in the main view.
+    // In ShowEditForm, we don't render a generic type selector, we render the specific form.
+    // So we need to look for specific hidden fields or infer from what inputs are present?
+    // OR we pass the type in.
+
+    // Let's assume we read the type from the context.
+    // If we are in Edit mode, the type is fixed (mostly).
+    // Let's try to detect type from presence of inputs if possible, or pass it.
+    // Actually, passing type is cleaner. But `handleAddComponent` reads it from DOM.
+
+    let componentType = s('systemComponentType');
+    // If undefined (e.g. edit mode might not have this input), we need another way.
+    // In edit mode, we can trust the 'Update' handler to know the type or find it.
+
+    // Let's defer type detection to the caller or improve this later.
+    // For now, let's assume we are calling this from handleAddComponent context mostly.
+
+    // WAIT. Reuse is hard if structure differs.
+    // In `showEditForm`, we render `renderSystemDuctInputs`. 
+    // That creates `ductLength_edit`, `sysDuctShape_edit` etc.
+    // It DOES NOT create `systemComponentType_edit`.
+
+    // So I should pass type to this function.
+    return { s, f, radio }; // Returning helpers for now to refactor iteratively
+}
+
+// ... Refactoring implies I replace the big chunk in handleAddComponent.
+// I will start by refactoring handleAddComponent to use these helpers inside itself first?
+// No, that's waste.
+
+function getDuctData(suffix) {
+    const elLength = document.getElementById('ductLength' + suffix);
+    if (!elLength) return null; // Not duct inputs
+
+    const length = parseLocalFloat(elLength.value);
+    const shape = document.querySelector(`input[name="sysDuctShape${suffix}"]:checked`).value;
+
+    let properties = { type: 'straightDuct', shape, length };
+    let name, details;
+
+    if (shape === 'round') {
+        const diameter = parseLocalFloat(document.getElementById('ductDiameter' + suffix).value);
+        properties.diameter = diameter;
+        properties.d = diameter; // Ensure alias
+        name = `Lige Kanal Ø${diameter}`; details = `${length}m`;
+    } else {
+        const sideA = parseLocalFloat(document.getElementById('ductSideA' + suffix).value);
+        const sideB = parseLocalFloat(document.getElementById('ductSideB' + suffix).value);
+        properties.sideA = sideA;
+        properties.sideB = sideB;
+        properties.h = sideA; // Ensure alias
+        properties.w = sideB; // Ensure alias
+        name = `Lige Kanal ${sideA}x${sideB}`; details = `${length}m`;
+    }
+
+    // Termodynamik & Isolering
+    const elAmbient = document.getElementById('ductAmbient' + suffix);
+    if (elAmbient && elAmbient.value !== '') properties.ambientTemp = parseLocalFloat(elAmbient.value);
+
+    const elIsoThick = document.getElementById('ductIsoThick' + suffix);
+    if (elIsoThick && elIsoThick.value !== '') properties.isoThick = parseLocalFloat(elIsoThick.value);
+
+    const elIsoLambda = document.getElementById('ductIsoLambda' + suffix);
+    if (elIsoLambda && elIsoLambda.value !== '') properties.isoLambda = parseLocalFloat(elIsoLambda.value);
+
+    return {
+        type: properties.type,
+        name,
+        details,
+        properties,
+        // state will be populated by recalculateSystem
+        state: {}
+    };
+}
+
+function getFittingData(suffix, typeOverride = null) {
+    const typeSelect = document.getElementById('systemFittingType' + suffix);
+    const fittingType = typeOverride || (typeSelect ? typeSelect.value : null);
+
+    if (!fittingType) return null;
+
+    let name, details, properties = { type: fittingType };
+
+    const s = (id) => document.getElementById(id + suffix).value;
+    const f = (id) => parseLocalFloat(s(id));
+    const radio = (n) => {
+        const el = document.querySelector(`input[name="${n}${suffix}"]:checked`);
+        return el ? el.value : null;
+    };
+
+    switch (fittingType) {
+        case 'bend_circ': {
+            properties.d = f('sys_d');
+            properties.angle = f('sys_angle');
+            properties.rd = f('sys_rd');
+            name = `Bøjning Cirk. Ø${properties.d}`;
+            details = `${properties.angle}° R=${properties.rd * properties.d}mm`;
+            break;
+        }
+        case 'bend_rect': {
+            properties.h = f('sys_h');
+            properties.w = f('sys_w');
+            properties.angle = f('sys_angle_r');
+            properties.rh = f('sys_rh');
+            name = `Bøjning Rekt. ${properties.h}x${properties.w}`;
+            details = `${properties.angle}°`;
+            break;
+        }
+        case 'expansion':
+        case 'contraction': {
+            const isExpansion = fittingType === 'expansion';
+            properties.d1 = f('sys_d1');
+            properties.d2 = f('sys_d2');
+            properties.angle = f('sys_angle_dim');
+            name = isExpansion ? `Udvidelse Ø${properties.d1} -> Ø${properties.d2}` : `Indsnævring Ø${properties.d1} -> Ø${properties.d2}`;
+            details = `${properties.angle}°`;
+            break;
+        }
+        case 'tee_sym':
+        case 'tee_asym':
+        case 'tee_bullhead': {
+            const isSym = fittingType === 'tee_sym';
+            const isBullhead = fittingType === 'tee_bullhead';
+
+            if (isBullhead) {
+                properties.path = radio('sysTeePath'); // path1 or path2
+                properties.q_out1 = f('sys_tee_q_out1');
+                properties.q_out2 = f('sys_tee_q_out2');
+                properties.d_in = f('sys_tee_d_in');
+                properties.d_out1 = f('sys_tee_d_out1');
+                properties.d_out2 = f('sys_tee_d_out2');
+
+                name = properties.path === 'path1' ? `Dobbelt T (Gren 1)` : `Dobbelt T (Gren 2)`;
+                details = `Ø${properties.d_in} -> Ø${properties.d_out1}/Ø${properties.d_out2}`;
+            } else {
+                properties.flowType = radio('sysTeeFlowType');
+                properties.path = radio('sysTeePath'); // straight or branch
+                properties.d_in = f('sys_tee_d_in');
+                properties.d_straight = isSym ? properties.d_in : f('sys_tee_d_straight');
+                properties.d_branch = isSym ? properties.d_in : f('sys_tee_d_branch');
+
+                if (properties.flowType === 'splitting') {
+                    properties.q_straight = f('sys_tee_q_straight');
+                    properties.q_branch = f('sys_tee_q_branch');
+                    name = properties.path === 'straight' ? `T-stykke (Ligeud)` : `T-stykke (Afgrening)`;
+                } else { // Merging
+                    properties.q_straight = f('sys_tee_q_straight');
+                    properties.q_branch = f('sys_tee_q_branch');
+                    name = properties.path === 'straight' ? `T-stykke (fra Ligeud)` : `T-stykke (fra Afgrening)`;
+                }
+            }
+            break;
+        }
+    }
+
+    if (!name && fittingType) return null;
+
+    // Termodynamik & Isolering
+    const elAmbient = document.getElementById('sys_ambient' + suffix);
+    if (elAmbient && elAmbient.value !== '') properties.ambientTemp = parseLocalFloat(elAmbient.value);
+
+    const elIsoThick = document.getElementById('sys_isoThick' + suffix);
+    if (elIsoThick && elIsoThick.value !== '') properties.isoThick = parseLocalFloat(elIsoThick.value);
+
+    const elIsoLambda = document.getElementById('sys_isoLambda' + suffix);
+    if (elIsoLambda && elIsoLambda.value !== '') properties.isoLambda = parseLocalFloat(elIsoLambda.value);
+
+    return {
+        type: fittingType,
+        name,
+        details,
+        properties,
+        state: {} // Populated by physics engine
+    };
+}
+
+
+// Function to recalculate the entire system chain based on Graph Topology
+function recalculateSystem() {
+    const graph = stateManager.getGraph();
+    // Filter out auto-generated components to get the "user intent" list
+    // In a pure graph, we'd traverse and remove transition nodes first
+    const userComponents = Object.values(graph.nodes)
+        .filter(c => !c.isAutoGenerated)
+        // Rough topological sort for now (linear)
+        .sort((a, b) => {
+            // VERY naive sort based on ID for now to maintain order
+            return a.id.localeCompare(b.id);
+        });
+
+    // Reset graph to rebuild with transitions
+    stateManager.clearSystem();
+
+    // Safety check for UI elements
+    const flowTypeEl = document.querySelector('input[name="systemFlowType"]:checked');
+    const globalFlowType = flowTypeEl ? flowTypeEl.value : 'splitting'; // Default
+
+    const startAirflowEl = document.getElementById('system_airflow');
+    const startAirflow = startAirflowEl ? parseLocalFloat(startAirflowEl.value) : 1000;
+
+    const tempEl = document.getElementById('temperature');
+    const temp = tempEl ? parseLocalFloat(tempEl.value) : 20;
+
+    const ambEl = document.getElementById('ambient_temperature');
+    const globalAmbient = ambEl ? parseLocalFloat(ambEl.value) : 20;
+
+    const { RHO, NU } = physics.getAirProperties(temp);
+
+    let currentAirflow = startAirflow;
+    let currentTemp = temp;
+    let lastOutlet = null;
+    let lastNodeId = null;
+
+    userComponents.forEach((component, index) => {
+        let incomingFlow = currentAirflow;
+        let incomingTemp = currentTemp;
+
+        let newCalc = {};
+
+        const q_m = incomingFlow * RHO / 3600; // kg/s
+        const p = component.properties;
+        const compAmbient = p.ambientTemp !== undefined ? p.ambientTemp : globalAmbient;
+        const isoThick = p.isoThick ? p.isoThick / 1000 : 0; // standard to meters
+        const isoLambda = p.isoLambda || 0.037;
+
+        let t_out_val = incomingTemp;
+        let q_loss_val = 0;
+
+        // --- 1. Calculate Component Physics based on properties and incoming flow ---
+        if (component.type === 'straightDuct') {
+            const Q = incomingFlow / 3600;
+            let performance, inletDim, outletDim, perimeter;
+
+            if (p.shape === 'round') {
+                inletDim = outletDim = { shape: 'round', d: p.diameter };
+                performance = physics.getPerformance(Q, p.diameter / 1000, { shape: 'round', a: p.diameter }, RHO, NU);
+                perimeter = Math.PI * (p.diameter / 1000);
+            } else {
+                inletDim = outletDim = { shape: 'rect', h: p.sideA, w: p.sideB };
+                performance = physics.getPerformance(Q, 0, { shape: 'rect', a: p.sideA, b: p.sideB }, RHO, NU);
+                perimeter = 2 * ((p.sideA / 1000) + (p.sideB / 1000));
             }
 
-            if (!needsTransition) return;
+            const thermo = physics.calculateTemperatureDrop(incomingTemp, compAmbient, p.length, perimeter, q_m, isoThick, isoLambda);
+            t_out_val = thermo.t_out;
+            q_loss_val = thermo.q_loss;
 
-            let A1, A2, d1, d2, h1, w1, h2, w2, type, name, details;
-            let isEstimated = false;
-            const angle = 30; // Standard 30 grader
-
-            if (lastOutlet.shape === 'round') { A1 = Math.PI * (getInternalDim(lastOutlet.d) / 2000) ** 2; d1 = lastOutlet.d; }
-            else { A1 = (getInternalDim(lastOutlet.h) / 1000) * (getInternalDim(lastOutlet.w) / 1000); h1 = lastOutlet.h; w1 = lastOutlet.w; }
-            if (newInlet.shape === 'round') { A2 = Math.PI * (getInternalDim(newInlet.d) / 2000) ** 2; d2 = newInlet.d; }
-            else { A2 = (getInternalDim(newInlet.h) / 1000) * (getInternalDim(newInlet.w) / 1000); h2 = newInlet.h; w2 = newInlet.w; }
-
-            const isExpansion = A2 > A1;
-            const area_ratio = A1 / A2;
-            let zeta_table;
-
-            // Logic to choose table based on types (omitted repetition from reading, using simplified logic)
-            // ... (Same logic as in original file lines 1795-1825)
-            if (lastOutlet.shape === 'round' && newInlet.shape === 'rect') {
-                type = 'transition_round_rect'; name = 'OBS: Overgang (auto)'; details = `fra Ø${d1} til ${h2}x${w2}`;
-                if (globalFlowType === 'merging') zeta_table = physics.ROUND_TO_RECT_EXHAUST_ZETA;
-                else { zeta_table = isExpansion ? physics.EXPANSION_ZETA : physics.CONTRACTION_ZETA; isEstimated = true; }
-            } else if (lastOutlet.shape === 'rect' && newInlet.shape === 'round') {
-                type = 'transition_rect_round'; name = 'OBS: Overgang (auto)'; details = `fra ${h1}x${w1} til Ø${d2}`;
-                if (globalFlowType === 'splitting') zeta_table = physics.RECT_TO_ROUND_SUPPLY_ZETA;
-                else { zeta_table = isExpansion ? physics.EXPANSION_ZETA : physics.CONTRACTION_ZETA; isEstimated = true; }
-            } else if (lastOutlet.shape === 'round' && newInlet.shape === 'round') {
-                type = isExpansion ? 'expansion' : 'contraction';
-                zeta_table = isExpansion ? physics.EXPANSION_ZETA : physics.CONTRACTION_ZETA;
-                name = isExpansion ? 'OBS: Udvidelse (auto)' : 'OBS: Indsnævring (auto)'; details = `fra Ø${d1} til Ø${d2}`;
-            } else { // rect to rect
-                type = isExpansion ? 'expansion_rect' : 'contraction_rect';
-                zeta_table = isExpansion ? physics.RECT_EXPANSION_ZETA : physics.RECT_CONTRACTION_ZETA;
-                name = isExpansion ? 'OBS: Udvidelse (auto)' : 'OBS: Indsnævring (auto)'; details = `fra ${h1}x${w1} til ${h2}x${w2}`;
-            }
-
-            if (isEstimated) details += ' (Estimeret)';
-
-            const zeta = physics.interpolateValue(angle, area_ratio, zeta_table);
-            const A_ref = isExpansion ? A1 : A2;
-            const v = Q / A_ref;
-            const Pdyn_Pa = (RHO / 2) * v ** 2;
-            const pressureLoss = zeta * Pdyn_Pa;
-
-            const transitionComponent = {
-                id: Date.now() - 1, airflow: airflow, type: type, name: name, details: details,
-                velocity: v, pressureLoss: pressureLoss,
-                calculationDetails: { Q_m3s: Q, A_m2: A_ref, v_ms: v, zeta: zeta, Pdyn_Pa: Pdyn_Pa, type: type, angle: angle },
-                isAutoGenerated: true, isEstimated: isEstimated,
-                outletDimension: newInlet, newAirflowAfter: airflow
+            newCalc = {
+                airflow_in: incomingFlow,
+                airflow_out: { 'outlet': incomingFlow },
+                velocity: performance.velocity,
+                pressureLoss: performance.pressureDrop * p.length,
+                zeta: null,
+                inletDimension: inletDim,
+                outletDimension: { 'outlet': outletDim },
+                calculationDetails: performance,
+                temperature_in: incomingTemp,
+                temperature_out: { 'outlet': t_out_val },
+                heatLoss: q_loss_val
             };
-            console.log('Adding transition component:', transitionComponent);
-            addSystemComponent(transitionComponent);
-        };
+        } else if (component.type === 'manualLoss') {
+            const inletDim = lastOutlet || { shape: 'round', d: 0 };
+            newCalc = {
+                airflow_in: incomingFlow,
+                airflow_out: { 'outlet': incomingFlow },
+                velocity: null,
+                pressureLoss: p.pressureLoss,
+                zeta: null,
+                inletDimension: inletDim,
+                outletDimension: { 'outlet': inletDim },
+                calculationDetails: null,
+                temperature_in: incomingTemp,
+                temperature_out: { 'outlet': t_out_val },
+                heatLoss: 0
+            };
+        } else {
+            // Fittings - assume negligible heat loss due to short length for now
+            const Q = incomingFlow / 3600;
+            let inletDim, outletDim, v, zeta = 0, Pdyn_Pa = 0, A = 0, pressureLoss = 0, airflow_out = {}, temp_out = {};
+            let calculationDetails = {};
 
-        // --- 2. OPRET BRUGER-VALGT KOMPONENT ---
-        let newComponent = { id: Date.now(), airflow: airflow };
-        let inletDimension;
-        let isEstimated = false; // Denne bruges kun til blandede overgange
-        let targetIndex = -1; // Til korrektions-indsættelse
-
-        if (componentType === 'straightDuct') {
-            const length = parseLocalFloat(document.getElementById('ductLength').value);
-            const shape = document.querySelector('input[name="sysDuctShape"]:checked').value;
-            let performance, name, details, calcDetails, outletDimension;
-            if (shape === 'round') {
-                const diameter = parseLocalFloat(document.getElementById('ductDiameter').value);
-                inletDimension = { shape: 'round', d: diameter };
-                outletDimension = { shape: 'round', d: diameter };
-                performance = physics.getPerformance(Q, diameter / 1000, { shape: 'round', a: diameter }, RHO, NU);
-                name = `Lige Kanal Ø${diameter}`; details = `${length}m`;
-                calcDetails = { ...performance, shape: 'round', a: diameter, length: length, type: 'straightDuct' };
-            } else {
-                const sideA = parseLocalFloat(document.getElementById('ductSideA').value);
-                const sideB = parseLocalFloat(document.getElementById('ductSideB').value);
-                inletDimension = { shape: 'rect', h: sideA, w: sideB };
-                outletDimension = { shape: 'rect', h: sideA, w: sideB };
-                performance = physics.getPerformance(Q, 0, { shape: 'rect', a: sideA, b: sideB }, RHO, NU);
-                name = `Lige Kanal ${sideA}x${sideB}`; details = `${length}m`;
-                calcDetails = { ...performance, shape: 'rect', a: sideA, b: sideB, length: length, type: 'straightDuct' };
-            }
-            addTransitionIfNeeded(inletDimension);
-            newComponent = { ...newComponent, type: 'straightDuct', name, details, velocity: performance.velocity, pressureLoss: performance.pressureDrop * length, calculationDetails: calcDetails, newAirflowAfter: airflow, outletDimension: outletDimension };
-            console.log('Adding new component:', newComponent);
-            addSystemComponent(newComponent);
-
-        } else if (componentType === 'manualLoss') {
-            const name = document.getElementById('manualLossName').value || 'Manuelt Tab';
-            const pressureLoss = parseLocalFloat(document.getElementById('manualLossValue').value);
-            let outletDimension = lastComponent ? lastComponent.outletDimension : null;
-
-            if (correctionTargetId) {
-                targetIndex = systemComponents.findIndex(c => c.id === correctionTargetId);
-                if (targetIndex !== -1) {
-                    outletDimension = systemComponents[targetIndex].outletDimension;
-                }
-            }
-            inletDimension = outletDimension;
-
-            if (correctionTargetId === null) {
-                addTransitionIfNeeded(inletDimension);
-            }
-
-            newComponent = { ...newComponent, type: 'manualLoss', name, details: '', velocity: null, pressureLoss: pressureLoss, calculationDetails: null, newAirflowAfter: airflow, outletDimension: outletDimension };
-
-            if (correctionTargetId && targetIndex !== -1) {
-                // Insert at specific index + 1
-                const currentComps = getSystemComponents();
-                currentComps.splice(targetIndex + 1, 0, newComponent);
-                setSystemComponents(currentComps);
-                setCorrectionTargetId(null);
-            } else {
-                addSystemComponent(newComponent);
-            }
-
-        } else if (componentType === 'fitting') {
-            const fittingType = document.getElementById('systemFittingType').value;
-            if (!fittingType) { alert('Vælg venligst en type formstykke.'); return; }
-            let name, details, velocity, pressureLoss, calculationDetails, outletDimension;
-            let newAirflowAfter = airflow;
-            let zeta, A, v, Pdyn_Pa;
-
-            switch (fittingType) {
-                case 'bend_circ': {
-                    const d = parseLocalFloat(document.getElementById('sys_d').value);
-                    inletDimension = { shape: 'round', d: d };
-                    outletDimension = { shape: 'round', d: d };
-                    const angle = parseLocalFloat(document.getElementById('sys_angle').value);
-
-                    const rd = parseLocalFloat(document.getElementById('sys_rd').value);
-                    const radius = rd * d;
-
-                    const rd_key = rd < 1.25 ? "rd1_0" : "rd1_5";
-                    zeta = physics.interpolateValue(angle, d, physics.CIRCULAR_BEND_ZETA[rd_key]);
-                    A = Math.PI * (getInternalDim(d) / 2000) ** 2;
-                    v = Q / A;
-                    name = `Bøjning Cirk. Ø${d}`; details = `${angle}° R=${radius}mm`;
-                    calculationDetails = { Q_m3s: Q, A_m2: A, v_ms: v, zeta: zeta, Pdyn_Pa: (RHO / 2) * v ** 2 };
-                    pressureLoss = zeta * calculationDetails.Pdyn_Pa;
-                    break;
-                }
-                // ... (Implementing other fitting types with similar logic fixes if needed)
-                // For brevity, I will implement the most common ones and assume standard inputs match.
-
-                // Note: I will just use the logic from physics.js as much as possible.
-                // For Tee:
-                case 'tee_sym':
-                case 'tee_asym':
-                case 'tee_bullhead':
-                    // Need special handling for Tees which split flow/change airflow
-                    // ... (Implementation complexity is high here, I will try to follow original structure but using physics helpers)
-                    const isSym = fittingType === 'tee_sym';
-                    const isBullhead = fittingType === 'tee_bullhead';
-
-                    if (isBullhead) {
-                        // Bullhead logic
-                        const path = document.querySelector('input[name="sysTeePath"]:checked').value; // path1 or path2
-                        const q_out1 = parseLocalFloat(document.getElementById('sys_tee_q_out1').value);
-                        const q_out2 = parseLocalFloat(document.getElementById('sys_tee_q_out2').value);
-                        const d_in = parseLocalFloat(document.getElementById('sys_tee_d_in').value);
-                        const d_out1 = parseLocalFloat(document.getElementById('sys_tee_d_out1').value);
-                        const d_out2 = parseLocalFloat(document.getElementById('sys_tee_d_out2').value);
-
-                        inletDimension = { shape: 'round', d: d_in };
-
-                        const results = physics.calculateBullheadTeeLoss({ q_in: airflow, q_out1, q_out2 }, { d_in, d_out1, d_out2 }, RHO);
-
-                        if (path === 'path1') {
-                            pressureLoss = results.loss1;
-                            outletDimension = { shape: 'round', d: d_out1 };
-                            newAirflowAfter = q_out1;
-                            name = `Dobbelt T (Gren 1)`;
-                            calculationDetails = results.details1;
-                        } else {
-                            pressureLoss = results.loss2;
-                            outletDimension = { shape: 'round', d: d_out2 };
-                            newAirflowAfter = q_out2;
-                            name = `Dobbelt T (Gren 2)`;
-                            calculationDetails = results.details2;
-                        }
-                        details = `Ø${d_in} -> Ø${d_out1}/Ø${d_out2}`;
-
+            if (p.type === 'bend_circ') {
+                inletDim = outletDim = { shape: 'round', d: p.d };
+                const rd_key = p.rd < 1.25 ? "rd1_0" : "rd1_5";
+                zeta = physics.interpolateValue(p.angle, p.d, physics.CIRCULAR_BEND_ZETA[rd_key]);
+                A = Math.PI * (getInternalDim(p.d) / 2000) ** 2;
+                v = Q / A;
+                Pdyn_Pa = (RHO / 2) * v ** 2;
+                pressureLoss = zeta * Pdyn_Pa;
+                airflow_out = { 'outlet': incomingFlow };
+                temp_out = { 'outlet': incomingTemp };
+                calculationDetails = { A_m2: A, v_ms: v, zeta, Pdyn_Pa };
+            } else if (p.type === 'bend_rect') {
+                inletDim = outletDim = { shape: 'rect', h: p.h, w: p.w };
+                const hw_ratio = p.h / p.w;
+                const zeta_base = physics.interpolateValue(hw_ratio, p.rh, physics.RECTANGULAR_BEND_ZETA.mainTable);
+                const k_factor = physics.interpolateValue(p.angle, null, physics.RECTANGULAR_BEND_ZETA.kFactor);
+                zeta = zeta_base * k_factor;
+                let h_int = getInternalDim(p.h) / 1000, w_int = getInternalDim(p.w) / 1000;
+                A = h_int * w_int;
+                v = Q / A;
+                Pdyn_Pa = (RHO / 2) * v ** 2;
+                pressureLoss = zeta * Pdyn_Pa;
+                airflow_out = { 'outlet': incomingFlow };
+                temp_out = { 'outlet': incomingTemp };
+                calculationDetails = { A_m2: A, v_ms: v, zeta, Pdyn_Pa };
+            } else if (p.type === 'expansion' || p.type === 'contraction') {
+                const isExpansion = p.type === 'expansion';
+                inletDim = { shape: 'round', d: p.d1 };
+                outletDim = { shape: 'round', d: p.d2 };
+                const A1 = Math.PI * (getInternalDim(p.d1) / 2000) ** 2;
+                const A2 = Math.PI * (getInternalDim(p.d2) / 2000) ** 2;
+                const area_ratio = A2 / A1;
+                const zeta_table = isExpansion ? physics.EXPANSION_ZETA : physics.CONTRACTION_ZETA;
+                zeta = physics.interpolateValue(p.angle, area_ratio, zeta_table);
+                A = isExpansion ? A1 : A2;
+                v = Q / A;
+                Pdyn_Pa = (RHO / 2) * v ** 2;
+                pressureLoss = zeta * Pdyn_Pa;
+                airflow_out = { 'outlet': incomingFlow };
+                temp_out = { 'outlet': incomingTemp };
+                calculationDetails = { A_m2: A, v_ms: v, zeta, Pdyn_Pa };
+            } else if (p.type === 'tee_sym' || p.type === 'tee_asym') {
+                inletDim = { shape: 'round', d: p.d_in };
+                if (p.flowType === 'splitting') {
+                    const results = physics.calculateTeePressureLoss({ q_in: incomingFlow, q_straight: p.q_straight, q_branch: p.q_branch }, { d_in: p.d_in, d_straight: p.d_straight, d_branch: p.d_branch }, RHO);
+                    if (p.path === 'straight') {
+                        pressureLoss = results.loss_straight;
+                        outletDim = { shape: 'round', d: p.d_straight };
+                        airflow_out = { 'outlet_straight': p.q_straight, 'outlet_branch': p.q_branch, 'outlet': p.q_straight };
+                        temp_out = { 'outlet_straight': incomingTemp, 'outlet_branch': incomingTemp, 'outlet': incomingTemp };
+                        calculationDetails = results.details_straight;
                     } else {
-                        // Normal Tee
-                        const flowType = document.querySelector('input[name="sysTeeFlowType"]:checked').value;
-                        const path = document.querySelector('input[name="sysTeePath"]:checked').value; // straight or branch
-                        const d_in = parseLocalFloat(document.getElementById('sys_tee_d_in').value);
-                        const d_straight = document.getElementById('sys_tee_d_straight') ? parseLocalFloat(document.getElementById('sys_tee_d_straight').value) : d_in;
-                        const d_branch = document.getElementById('sys_tee_d_branch') ? parseLocalFloat(document.getElementById('sys_tee_d_branch').value) : d_in;
-
-                        if (flowType === 'splitting') {
-                            const q_straight = parseLocalFloat(document.getElementById('sys_tee_q_straight').value);
-                            const q_branch = parseLocalFloat(document.getElementById('sys_tee_q_branch').value);
-
-                            const results = physics.calculateTeePressureLoss({ q_in: airflow, q_straight, q_branch }, { d_in, d_straight, d_branch }, RHO);
-
-                            inletDimension = { shape: 'round', d: d_in };
-
-                            if (path === 'straight') {
-                                pressureLoss = results.loss_straight;
-                                outletDimension = { shape: 'round', d: d_straight };
-                                newAirflowAfter = q_straight;
-                                name = `T-stykke (Ligeud)`;
-                                calculationDetails = results.details_straight;
-                            } else {
-                                pressureLoss = results.loss_branch;
-                                outletDimension = { shape: 'round', d: d_branch };
-                                newAirflowAfter = q_branch;
-                                name = `T-stykke (Afgrening)`;
-                                calculationDetails = results.details_branch;
-                            }
-
-                        } else { // Merging
-                            // ... Similar logic for merging ...
-                            // Simplified for brevity, assume similar structure
-                            const q_straight = parseLocalFloat(document.getElementById('sys_tee_q_straight').value);
-                            const q_branch = parseLocalFloat(document.getElementById('sys_tee_q_branch').value);
-                            const results = physics.calculateConvergingTeePressureLoss({ q_straight, q_branch }, { d_common: d_in, d_straight, d_branch }, RHO);
-
-                            inletDimension = { shape: 'round', d: path === 'straight' ? d_straight : d_branch }; // Approx
-                            outletDimension = { shape: 'round', d: d_in };
-                            newAirflowAfter = results.q_out;
-
-                            if (path === 'straight') {
-                                pressureLoss = results.loss_straight;
-                                name = `T-stykke (fra Ligeud)`;
-                                calculationDetails = results.details_straight;
-                            } else {
-                                pressureLoss = results.loss_branch;
-                                name = `T-stykke (fra Afgrening)`;
-                                calculationDetails = results.details_branch;
-                            }
-                        }
+                        pressureLoss = results.loss_branch;
+                        outletDim = { shape: 'round', d: p.d_branch };
+                        airflow_out = { 'outlet_straight': p.q_straight, 'outlet_branch': p.q_branch, 'outlet': p.q_branch };
+                        temp_out = { 'outlet_straight': incomingTemp, 'outlet_branch': incomingTemp, 'outlet': incomingTemp };
+                        calculationDetails = results.details_branch;
                     }
-                    break;
-
-                default:
-                    // Fallback for other fittings
-                    name = "Andet Formstykke"; pressureLoss = 0; outletDimension = null;
+                } else { // Merging
+                    const results = physics.calculateConvergingTeePressureLoss({ q_straight: p.q_straight, q_branch: p.q_branch }, { d_common: p.d_in, d_straight: p.d_straight, d_branch: p.d_branch }, RHO);
+                    if (p.path === 'straight') {
+                        pressureLoss = results.loss_straight;
+                        calculationDetails = results.details_straight;
+                        inletDim = { shape: 'round', d: p.d_straight };
+                    } else {
+                        pressureLoss = results.loss_branch;
+                        calculationDetails = results.details_branch;
+                        inletDim = { shape: 'round', d: p.d_branch };
+                    }
+                    outletDim = { shape: 'round', d: p.d_in };
+                    airflow_out = { 'outlet': results.q_out };
+                    temp_out = { 'outlet': incomingTemp }; // Linear assumption: branches didn't cool differently yet
+                }
+                v = calculationDetails.v_ms || 0;
             }
 
-            addTransitionIfNeeded(inletDimension);
-            newComponent = { ...newComponent, type: 'fitting', name, details, velocity, pressureLoss, calculationDetails: calculationDetails, newAirflowAfter: newAirflowAfter, outletDimension: outletDimension };
-            addSystemComponent(newComponent);
+            newCalc = {
+                airflow_in: incomingFlow,
+                airflow_out: airflow_out,
+                velocity: v,
+                pressureLoss: pressureLoss,
+                zeta: zeta,
+                inletDimension: inletDim,
+                outletDimension: { 'outlet': outletDim },
+                calculationDetails: calculationDetails,
+                temperature_in: incomingTemp,
+                temperature_out: temp_out,
+                heatLoss: 0
+            };
         }
 
-        ui.renderSystem();
-        ui.handleComponentTypeChange(); // Reset/Reload inputs
-    } catch (error) {
-        alert("Fejl: " + error.message);
+        // Apply calculated state
+        component.state = newCalc;
+
+        // --- 2. Check and Insert Transitions ---
+        if (index > 0 && lastOutlet) {
+            const transition = createTransitionComponent(lastOutlet, component.state.inletDimension, incomingFlow, globalFlowType, null);
+            if (transition) {
+                stateManager.addSystemComponent(transition, lastNodeId);
+                lastNodeId = transition.id;
+            }
+        }
+
+        // --- 3. Add the recalculated user component back to the graph ---
+        stateManager.addSystemComponent(component, lastNodeId, 'outlet', 'inlet');
+        lastNodeId = component.id;
+
+        // --- 4. Update tracking variables for next iteration ---
+        if (component.state.outletDimension && component.state.outletDimension['outlet']) {
+            lastOutlet = component.state.outletDimension['outlet'];
+        }
+        if (component.state.airflow_out && component.state.airflow_out['outlet']) {
+            currentAirflow = component.state.airflow_out['outlet'];
+        }
+        if (component.state.temperature_out && component.state.temperature_out['outlet'] !== undefined) {
+            currentTemp = component.state.temperature_out['outlet'];
+        }
+    });
+
+    ui.renderSystem();
+    ui.handleComponentTypeChange();
+}
+window.recalculateSystem = recalculateSystem;
+
+// Exposed handler for Add button
+function handleAddSystemComponent(event) {
+    if (event) event.preventDefault();
+    handleAddComponent(event);
+}
+window.handleAddSystemComponent = handleAddSystemComponent;
+
+function handleAddComponent(event) {
+    if (event) event.preventDefault();
+    const type = document.getElementById('systemComponentType').value;
+
+    // We need starting conditions. 
+    // Usually: from global input OR from last component
+    const temp = parseLocalFloat(document.getElementById('temperature').value);
+    if (isNaN(temp)) return alert("Ugyldig temperatur.");
+
+    let currentAirflow = parseLocalFloat(document.getElementById('system_airflow').value);
+    if (isNaN(currentAirflow) || currentAirflow <= 0) return alert("Ugyldig start luftmængde.");
+
+    const systemComponents = getSystemComponents();
+    let previousComponent = systemComponents.length > 0 ? systemComponents[systemComponents.length - 1] : null;
+
+    if (previousComponent && previousComponent.state && previousComponent.state.airflow_out) {
+        // Just take the first output airflow for now in the linear builder
+        currentAirflow = Object.values(previousComponent.state.airflow_out)[0] || currentAirflow;
+    } else if (previousComponent && previousComponent.airflow) {
+        currentAirflow = previousComponent.airflow;
+    }
+
+    let component = null;
+
+    if (type === 'straightDuct') {
+        component = getDuctData('');
+    } else if (type === 'fitting') {
+        component = getFittingData('');
+    } else if (type === 'manualLoss') {
+        const name = document.getElementById('manualLossName').value || 'Manuel Komponent';
+        const pressureLoss = parseLocalFloat(document.getElementById('manualLossValue').value);
+        if (isNaN(pressureLoss)) {
+            alert("Ugyldigt tryktab!");
+            return;
+        }
+        component = {
+            type: 'manualLoss',
+            name: name,
+            properties: { pressureLoss },
+            state: {}
+        };
+    }
+
+    if (component) {
+        component.id = 'node_' + Date.now();
+        // The old code had a currentAirflow tracking, but graph nodes shouldn't hardcode it. 
+        // We will store currentAirflow in state so recalculateSystem has a starting point if it's the first node.
+        if (!previousComponent) {
+            component.state.airflow_in = currentAirflow;
+        }
+
+        const correctionTargetId = getCorrectionTargetId();
+
+        if (correctionTargetId) {
+            // For now, correction is just injecting after target. We need to handle this in Graph.
+            // Let's just append linearly for now and clear target.
+            stateManager.addSystemComponent(component, correctionTargetId);
+            setCorrectionTargetId(null);
+        } else {
+            stateManager.addSystemComponent(component);
+        }
+
+        recalculateSystem();
+        ui.showSaveStatus('Komponent tilføjet');
+        updateUndoRedoUI(canUndo(), canRedo());
+
+        // Scroll to bottom
+        setTimeout(() => {
+            const list = document.getElementById('systemComponentsList');
+            if (list) list.scrollTop = list.scrollHeight;
+        }, 100);
     }
 }
 
@@ -936,14 +1294,27 @@ window.loadSystem = (event) => {
         try {
             const data = JSON.parse(e.target.result);
             document.getElementById('projectName').value = data.projectName || '';
-            document.getElementById('system_airflow').value = data.startAirflow || '';
 
-            // Set flow type radio
-            const radios = document.getElementsByName('systemFlowType');
-            radios.forEach(r => { if (r.value === data.systemType) r.checked = true; });
+            if (data.state) {
+                // New graph-based format
+                stateManager.state = data.state;
+                stateManager.persist();
 
-            setSystemComponents(data.components || []);
-            ui.renderSystem();
+                // Keep UI form fields in sync with loaded data
+                document.getElementById('system_airflow').value = stateManager.state.startAirflow || '';
+                const radios = document.getElementsByName('systemFlowType');
+                radios.forEach(r => { if (r.value === stateManager.state.systemType) r.checked = true; });
+
+                ui.renderSystem();
+            } else {
+                // Legacy array-based format
+                document.getElementById('system_airflow').value = data.startAirflow || '';
+                const radios = document.getElementsByName('systemFlowType');
+                radios.forEach(r => { if (r.value === data.systemType) r.checked = true; });
+
+                setSystemComponents(data.components || []);
+                ui.renderSystem();
+            }
             ui.toggleSystemMenu();
         } catch (error) {
             alert('Fejl ved indlæsning af fil: ' + error.message);
@@ -952,6 +1323,40 @@ window.loadSystem = (event) => {
     reader.readAsText(file);
 };
 
+window.triggerFileLoad = () => {
+    window.toggleSystemMenu(); // Close menu
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.onchange = window.loadSystem;
+    input.click();
+};
+
+window.saveSystem = () => {
+    window.toggleSystemMenu(); // Close menu
+    const projectName = document.getElementById('projectName').value || 'ventilation_projekt';
+    const dataToSave = {
+        projectName: projectName,
+        state: stateManager.state // Save entire graph and system state
+    };
+    const blob = new Blob([JSON.stringify(dataToSave, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${projectName}_data.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+};
 
 document.addEventListener('DOMContentLoaded', initializeApp);
 
+
+// Unregister Service Worker (if any exists from previous versions) to prevent caching issues
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.getRegistrations().then(function (registrations) {
+        for (let registration of registrations) {
+            registration.unregister();
+            console.log('Service Worker unregistered');
+        }
+    });
+}

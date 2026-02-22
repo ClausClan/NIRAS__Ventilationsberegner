@@ -16,7 +16,11 @@ class StateManager {
     resetState() {
         this.state = {
             fittingsList: [],
-            systemComponents: [],
+            systemComponents: [], // Deprecated, but kept for UI compat temporarily during transition
+            graph: {
+                nodes: {}, // id -> component object
+                edges: [], // { from: id, fromPort: 'outlet', to: id, toPort: 'inlet' }
+            },
             ductResult: null,
             correctionTargetId: null,
             projectName: '',
@@ -123,33 +127,183 @@ class StateManager {
         this.persist();
     }
 
-    // System Components
-    getSystemComponents() { return this.state.systemComponents; }
-    addSystemComponent(comp) {
-        console.log('StateManager: addSystemComponent called', comp);
+    // --- Graph-Based System Components ---
+    getGraph() {
+        if (!this.state.graph) {
+            this.state.graph = { nodes: {}, edges: [] };
+        }
+        return this.state.graph;
+    }
+
+    addSystemComponent(comp, parentId = null, parentPort = 'outlet', targetPort = 'inlet') {
+        console.log('StateManager: addSystemComponent (Graph) called', comp.name);
         this.saveState(`Added component ${comp.name}`);
-        if (!this.state.systemComponents) this.state.systemComponents = [];
-        this.state.systemComponents.push(comp);
+
+        const graph = this.getGraph();
+        graph.nodes[comp.id] = comp;
+
+        // If no parentId is provided, and we have existing nodes, we try to append to the "last" one for linear compat.
+        if (!parentId && Object.keys(graph.nodes).length > 1) {
+            // Find a node that has no outgoing edges from its main outlet
+            const targetParentId = Object.keys(graph.nodes).find(id => {
+                const node = graph.nodes[id];
+                return id !== comp.id && !graph.edges.find(e => e.from === id && e.fromPort === 'outlet');
+            });
+            if (targetParentId) {
+                parentId = targetParentId;
+            }
+        }
+
+        if (parentId && graph.nodes[parentId]) {
+            graph.edges.push({
+                from: parentId,
+                fromPort: parentPort,
+                to: comp.id,
+                toPort: targetPort
+            });
+        }
+
+        // Backward compatibility sync
+        this.syncGraphToArray();
         this.persist();
     }
+
+    removeSystemComponent(id) {
+        this.saveState(`Removed component ${id}`);
+        const graph = this.getGraph();
+
+        // Remove node
+        delete graph.nodes[id];
+
+        // Remove connected edges
+        graph.edges = graph.edges.filter(e => e.from !== id && e.to !== id);
+
+        // Note: Removing a middle node leaves the graph disconnected.
+        // A sophisticated system would reconnect them or delete downstream.
+        // For now, we leave them disconnected, `recalculateSystem` must handle broken chains.
+
+        this.syncGraphToArray();
+        this.persist();
+    }
+
     removeLastSystemComponent() {
         this.saveState('Removed last component');
-        this.state.systemComponents.pop();
+        const graph = this.getGraph();
+        const nodeIds = Object.keys(graph.nodes);
+        if (nodeIds.length === 0) return;
+
+        // Find a leaf node (no outgoing edges)
+        const leafId = nodeIds.reverse().find(id => !graph.edges.find(e => e.from === id));
+        if (leafId) {
+            delete graph.nodes[leafId];
+            graph.edges = graph.edges.filter(e => e.from !== leafId && e.to !== leafId);
+        } else {
+            // Fallback if no leaf found (e.g. cycle, which shouldn't happen)
+            const lastId = nodeIds[nodeIds.length - 1];
+            delete graph.nodes[lastId];
+            graph.edges = graph.edges.filter(e => e.from !== lastId && e.to !== lastId);
+        }
+
+        this.syncGraphToArray();
         this.persist();
     }
+
     clearSystem() {
         this.saveState('Cleared system');
+        this.state.graph = { nodes: {}, edges: [] };
         this.state.systemComponents = [];
         this.state.correctionTargetId = null;
         this.persist();
     }
+
+    getSystemComponent(id) {
+        return this.getGraph().nodes[id] || this.state.systemComponents.find(c => c.id === id);
+    }
+
+    updateSystemComponent(id, newData) {
+        this.saveState(`Updated component ${newData.name}`);
+        const graph = this.getGraph();
+        if (graph.nodes[id]) {
+            graph.nodes[id] = { ...graph.nodes[id], ...newData };
+            this.syncGraphToArray();
+            this.persist();
+        } else {
+            // Fallback for array
+            const index = this.state.systemComponents.findIndex(c => c.id === id);
+            if (index !== -1) {
+                this.state.systemComponents[index] = { ...this.state.systemComponents[index], ...newData };
+                this.persist();
+            }
+        }
+    }
+
+    // Temporary helper to keep the array synced for UI rendering until UI is fully graph-aware
+    syncGraphToArray() {
+        const graph = this.getGraph();
+        const nodes = graph.nodes;
+        const edges = graph.edges;
+
+        let ordered = [];
+        let currentId = null;
+
+        // Find start node (no incoming edges)
+        const startNodes = Object.keys(nodes).filter(id => !edges.find(e => e.to === id));
+
+        // If multiple starts, just pick the first one for the linear array representation.
+        // Ideally there's only one start node connected to the main topological path.
+        if (startNodes.length > 0) {
+            currentId = startNodes[0];
+        } else if (Object.keys(nodes).length > 0) {
+            currentId = Object.keys(nodes)[0]; // Fallback
+        }
+
+        while (currentId && nodes[currentId]) {
+            ordered.push(nodes[currentId]);
+            // Follow the 'outlet' edge to simulate linear path
+            const nextEdge = edges.find(e => e.from === currentId && e.fromPort === 'outlet');
+            currentId = nextEdge ? nextEdge.to : null;
+
+            // Prevent infinite loops safely
+            if (ordered.length > Object.keys(nodes).length) break;
+        }
+
+        // Add any remaining nodes that aren't on the main path just so they exist in the array
+        const mainPathIds = new Set(ordered.map(n => n.id));
+        for (const id in nodes) {
+            if (!mainPathIds.has(id)) {
+                ordered.push(nodes[id]);
+            }
+        }
+
+        this.state.systemComponents = ordered;
+    }
+
+    // System Components (Legacy array accessors) - keeping interface identical to not break UI instantly
+    getSystemComponents() {
+        if (!this.state.graph) this.state.graph = { nodes: {}, edges: [] };
+        if (Object.keys(this.state.graph.nodes).length > 0 && this.state.systemComponents.length === 0) {
+            this.syncGraphToArray();
+        }
+        return this.state.systemComponents;
+    }
+
     setSystemComponents(comps) {
         this.saveState('Set system components');
+        // Rebuild graph from array sequence
+        this.state.graph = { nodes: {}, edges: [] };
+        comps.forEach((c, index) => {
+            this.state.graph.nodes[c.id] = c;
+            if (index > 0) {
+                this.state.graph.edges.push({
+                    from: comps[index - 1].id,
+                    fromPort: 'outlet',
+                    to: c.id,
+                    toPort: 'inlet'
+                });
+            }
+        });
         this.state.systemComponents = comps;
         this.persist();
-    }
-    getSystemComponent(id) {
-        return this.state.systemComponents.find(c => c.id === id);
     }
 
     // Duct Result
@@ -205,6 +359,8 @@ export function removeLastSystemComponent() { stateManager.removeLastSystemCompo
 export function clearSystem() { stateManager.clearSystem(); }
 export function setSystemComponents(comps) { stateManager.setSystemComponents(comps); }
 export function getSystemComponent(id) { return stateManager.getSystemComponent(id); }
+export function updateSystemComponent(id, newData) { stateManager.updateSystemComponent(id, newData); }
+export function deleteSystemComponent(id) { stateManager.removeSystemComponent(id); }
 
 export function getDuctResult() { return stateManager.getDuctResult(); }
 export function setDuctResult(res) { stateManager.setDuctResult(res); }

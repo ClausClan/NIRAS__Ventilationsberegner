@@ -1073,6 +1073,31 @@
             z-index: 1010;
         }
 
+        #systemDiagramContainer {
+            width: 100%;
+            min-height: 400px;
+            background: var(--input-bg-color);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 20px;
+            box-sizing: border-box;
+            overflow-x: auto;
+            /* Allow horizontal scroll if diagram is wide */
+            overflow-y: auto;
+            /* Allow vertical scroll */
+            margin-top: 20px;
+            text-align: center;
+        }
+
+        #systemDiagramContainer.hidden {
+            display: none;
+        }
+
+        /* Ensure SVG text is readable */
+        #systemDiagramContainer text {
+            font-family: 'Inter', sans-serif;
+        }
+
         .save-status {
             font-size: 0.85rem;
             color: var(--text-muted-color);

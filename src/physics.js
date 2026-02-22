@@ -242,3 +242,40 @@ export function interpolateValue(x, y, table) {
 
     return lerp(r1, r2, ty);
 }
+
+/**
+ * Calculates the temperature of air leaving a duct segment.
+ * @param {number} t_in - Inlet temperature [°C]
+ * @param {number} t_amb - Ambient temperature [°C]
+ * @param {number} L - Length of the duct segment [m]
+ * @param {number} perimeter - Perimeter of the duct exposed to ambient [m]
+ * @param {number} q_m - Mass flow rate of air [kg/s]
+ * @param {number} isoThick_m - Insulation thickness [m] (0 if uninsulated)
+ * @param {number} isoLambda - Insulation thermal conductivity [W/mK]
+ * @returns {object} { t_out: number, U: number, q_loss: number }
+ */
+export function calculateTemperatureDrop(t_in, t_amb, L, perimeter, q_m, isoThick_m = 0, isoLambda = 0.037) {
+    if (L <= 0 || q_m <= 0) return { t_out: t_in, U: 0, q_loss: 0 };
+
+    // Specific heat capacity of air [J/(kg*K)]
+    const cp = 1006;
+
+    // Surface heat transfer coefficients [m²K/W] 
+    // Typical values for indoor/ducts: R_si + R_se ~ 0.17
+    const R_si_se = 0.17;
+
+    // Thermal resistance of the insulation layer
+    const R_iso = isoThick_m > 0 && isoLambda > 0 ? (isoThick_m / isoLambda) : 0;
+
+    // Overall heat transfer coefficient U [W/(m²K)]
+    const U = 1.0 / (R_si_se + R_iso);
+
+    // Calculate outlet temperature using the exponential cooling equation
+    const exponent = -(U * perimeter * L) / (q_m * cp);
+    const t_out = t_amb + (t_in - t_amb) * Math.exp(exponent);
+
+    // Total heat loss to ambient [W]
+    const q_loss = q_m * cp * (t_in - t_out);
+
+    return { t_out, U, q_loss };
+}

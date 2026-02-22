@@ -68,11 +68,17 @@
                 </div>
             </header>
 
-            <div class="global-settings">
-                <div class="input-group">
+            <div class="global-settings" style="display: flex; gap: 15px;">
+                <div class="input-group" style="margin-bottom: 0;">
                     <div class="input-unit-wrapper" data-unit="°C">
-                        <label for="temperature">Lufttemperatur</label>
+                        <label for="temperature">Lufttemperatur (Start)</label>
                         <input type="text" id="temperature" class="input-field" value="20">
+                    </div>
+                </div>
+                <div class="input-group" style="margin-bottom: 0;">
+                    <div class="input-unit-wrapper" data-unit="°C">
+                        <label for="ambient_temperature">Omgivelsestemperatur (Standard)</label>
+                        <input type="text" id="ambient_temperature" class="input-field" value="20">
                     </div>
                 </div>
             </div>
@@ -92,6 +98,29 @@
             </div>
 
             <div id="system" class="tab-content hidden">
+                <div class="header-controls" style="margin-bottom: 20px; justify-content: space-between;">
+                    <h2 style="border: none; margin: 0; padding-bottom: 10px;">Systemberegning</h2>
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <button type="button" id="toggleViewBtn" class="button secondary"
+                            style="width: auto; padding: 5px 15px;" onclick="window.toggleDiagramView()">Vis
+                            Diagram</button>
+                        <!-- Diagram Controls (Hidden by default, shown when Diagram is active) -->
+                        <div id="diagramControls" class="hidden" style="display: flex; gap: 10px;">
+                            <select id="diagramColorMode" class="input-field" style="width: auto; padding: 5px;"
+                                onchange="window.updateDiagramSettings()">
+                                <option value="default">Farve: Standard</option>
+                                <option value="velocity">Farve: Hastighed</option>
+                                <option value="pressure">Farve: Tryktab</option>
+                            </select>
+                            <select id="diagramLabelMode" class="input-field" style="width: auto; padding: 5px;"
+                                onchange="window.updateDiagramSettings()">
+                                <option value="name">Tekst: Navn</option>
+                                <option value="detailed">Tekst: Detaljer (m/s, Pa)</option>
+                                <option value="compact">Tekst: Kompakt</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
                 <!-- Content injected by main.js -->
             </div>
         </div>
