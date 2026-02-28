@@ -244,6 +244,35 @@ export function interpolateValue(x, y, table) {
 }
 
 /**
+ * Calculates the specific heat capacity of humid air.
+ * @param {number} t_C - Air temperature [°C]
+ * @param {number} RH_pct - Relative humidity [%]
+ * @returns {number} Specific heat capacity [J/(kg*K)]
+ */
+export function calculateHeatCapacity(t_C, RH_pct = 50) {
+    // 1. Saturation vapor pressure (Magnus-Tetens formula)
+    const p_ws_hPa = 6.112 * Math.exp((17.67 * t_C) / (t_C + 243.5));
+    const p_ws_Pa = p_ws_hPa * 100;
+
+    // 2. Partial pressure of water vapor
+    const p_w_Pa = (RH_pct / 100) * p_ws_Pa;
+
+    // 3. Atmospheric pressure
+    const p_atm = 101325; // 1 atm
+
+    // 4. Humidity ratio (x) [kg water / kg dry air]
+    const x = 0.62198 * (p_w_Pa / (p_atm - p_w_Pa));
+
+    // 5. Specific heat capacities [J/(kg*K)]
+    const cp_dry = 1006;
+    const cp_vapor = 1840;
+
+    // 6. Specific heat capacity of the humid mixture
+    const g = x / (1 + x);
+    return (1 - g) * cp_dry + g * cp_vapor;
+}
+
+/**
  * Calculates the temperature of air leaving a duct segment.
  * @param {number} t_in - Inlet temperature [°C]
  * @param {number} t_amb - Ambient temperature [°C]
@@ -252,13 +281,14 @@ export function interpolateValue(x, y, table) {
  * @param {number} q_m - Mass flow rate of air [kg/s]
  * @param {number} isoThick_m - Insulation thickness [m] (0 if uninsulated)
  * @param {number} isoLambda - Insulation thermal conductivity [W/mK]
+ * @param {number} RH_pct - Relative humidity [%]
  * @returns {object} { t_out: number, U: number, q_loss: number }
  */
-export function calculateTemperatureDrop(t_in, t_amb, L, perimeter, q_m, isoThick_m = 0, isoLambda = 0.037) {
+export function calculateTemperatureDrop(t_in, t_amb, L, perimeter, q_m, isoThick_m = 0, isoLambda = 0.037, RH_pct = 50) {
     if (L <= 0 || q_m <= 0) return { t_out: t_in, U: 0, q_loss: 0 };
 
     // Specific heat capacity of air [J/(kg*K)]
-    const cp = 1006;
+    const cp = calculateHeatCapacity(t_in, RH_pct);
 
     // Surface heat transfer coefficients [m²K/W] 
     // Typical values for indoor/ducts: R_si + R_se ~ 0.17

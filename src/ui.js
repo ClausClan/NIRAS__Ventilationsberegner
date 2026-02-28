@@ -840,7 +840,9 @@ export function renderSystemDuctInputs(container, initialData = null) {
     const lastComponent = systemComponents.length > 0 ? systemComponents[systemComponents.length - 1] : null;
 
     const isAddMode = container.id === 'systemComponentInputsContainer' || container.id.startsWith('add_container') || container.id === 'inlineFittingInputsContainer';
-    const suffix = isAddMode ? '' : '_edit';
+    const isInlineAdd = container.id.startsWith('add_container') || container.id === 'inlineFittingInputsContainer' || container.id === 'inlineDuctInputsContainer';
+    const isEditMode = !isAddMode && initialData && initialData.id;
+    const suffix = isEditMode ? '_edit' : (isInlineAdd ? '_inline' : '');
     const btnAction = initialData ? `window.handleUpdateComponent('${initialData.id}')` : 'window.handleInlineComponentSubmit(event)';
     const btnText = initialData ? 'Opdater Komponent' : 'Tilføj til System';
 
@@ -914,7 +916,8 @@ export function renderSystemFittingInputs(container = null, initialData = null) 
     const targetContainer = container || document.getElementById('systemFittingInputsContainer');
     const isAddMode = targetContainer.id === 'systemComponentInputsContainer' || targetContainer.id.startsWith('add_container') || targetContainer.id === 'inlineFittingInputsContainer' || targetContainer.id === 'systemFittingInputsContainer';
     const isEditMode = !isAddMode && initialData && initialData.id;
-    const suffix = isAddMode ? '' : '_edit';
+    const isInlineAdd = targetContainer.id.startsWith('add_container');
+    const suffix = isEditMode ? '_edit' : (isInlineAdd ? '_inline' : '');
 
     // For edit mode, we might pass the type directly in data, or use a select in the container
     // But realistically, if we edit a fitting, we probably want to keep the type or change it via a select?
@@ -980,103 +983,168 @@ export function renderSystemFittingInputs(container = null, initialData = null) 
             break;
         case 'tee_sym':
         case 'tee_asym':
-            inputsHtml = `
-                <div class="input-group">
-                    <label>Flow Type</label> 
-                    <div class="radio-group"> 
-                        <input type="radio" id="${id('sysTeeFlowSplit')}" name="${id('sysTeeFlowType')}" value="splitting" checked><label for="${id('sysTeeFlowSplit')}">Indblæsning</label> 
-                        <input type="radio" id="${id('sysTeeFlowMerge')}" name="${id('sysTeeFlowType')}" value="merging"><label for="${id('sysTeeFlowMerge')}">Udsugning</label> 
+            // Check if we are in the standalone component calculator or the system builder
+            const isSystemBuilder = targetContainer.closest('#system') !== null;
+
+            // If standalone calculator, keep the old complex splitting/merging toggle
+            if (!isSystemBuilder) {
+                inputsHtml = `
+                    <div class="input-group">
+                        <label>Flow Type</label> 
+                        <div class="radio-group"> 
+                            <input type="radio" id="${id('sysTeeFlowSplit')}" name="${id('sysTeeFlowType')}" value="splitting" checked><label for="${id('sysTeeFlowSplit')}">Indblæsning</label> 
+                            <input type="radio" id="${id('sysTeeFlowMerge')}" name="${id('sysTeeFlowType')}" value="merging"><label for="${id('sysTeeFlowMerge')}">Udsugning</label> 
+                        </div>
                     </div>
-                </div>
-                <div id="${id('teeSpecificInputs')}"></div>`;
+                    <div id="${id('teeSpecificInputs')}"></div>`;
 
-            setTimeout(() => {
-                const teeFlowTypeRadios = document.getElementsByName(id('sysTeeFlowType'));
-                if (teeFlowTypeRadios.length > 0) {
-                    const renderTeeInputs = () => {
-                        const flowType = document.querySelector(`input[name="${id('sysTeeFlowType')}"]:checked`).value;
-                        const teeContainer = document.getElementById(id('teeSpecificInputs'));
-                        const isSym = fittingType === 'tee_sym';
+                setTimeout(() => {
+                    const teeFlowTypeRadios = document.getElementsByName(id('sysTeeFlowType'));
+                    if (teeFlowTypeRadios.length > 0) {
+                        const renderTeeInputs = () => {
+                            const flowType = document.querySelector(`input[name="${id('sysTeeFlowType')}"]:checked`).value;
+                            const teeContainer = document.getElementById(id('teeSpecificInputs'));
+                            const isSym = fittingType === 'tee_sym';
 
-                        const diameterInputs = isSym ?
-                            `<div class="input-group"><label>Diameter (alle grene)</label><select id="${id('sys_tee_d_in')}" class="input-field">${roundOptions}</select></div>` :
-                            `<div class="input-field-group">
-                                <div class="input-group"><label for="${id('sys_tee_d_in')}">Ø Ind/Ud</label><select id="${id('sys_tee_d_in')}" class="input-field">${roundOptions}</select></div>
-                                <div class="input-group"><label for="${id('sys_tee_d_straight')}">Ø Ligeud</label><select id="${id('sys_tee_d_straight')}" class="input-field">${roundOptions}</select></div>
-                                <div class="input-group"><label for="${id('sys_tee_d_branch')}">Ø Afgrening</label><select id="${id('sys_tee_d_branch')}" class="input-field">${roundOptions}</select></div>
-                            </div>`;
+                            const diameterInputs = isSym ?
+                                `<div class="input-group"><label>Diameter (alle grene)</label><select id="${id('sys_tee_d_in')}" class="input-field">${roundOptions}</select></div>` :
+                                `<div class="input-field-group">
+                                    <div class="input-group"><label for="${id('sys_tee_d_in')}">Ø Ind/Ud</label><select id="${id('sys_tee_d_in')}" class="input-field">${roundOptions}</select></div>
+                                    <div class="input-group"><label for="${id('sys_tee_d_straight')}">Ø Ligeud</label><select id="${id('sys_tee_d_straight')}" class="input-field">${roundOptions}</select></div>
+                                    <div class="input-group"><label for="${id('sys_tee_d_branch')}">Ø Afgrening</label><select id="${id('sys_tee_d_branch')}" class="input-field">${roundOptions}</select></div>
+                                </div>`;
 
-                        if (flowType === 'splitting') {
-                            teeContainer.innerHTML = `
-                                <div class="sub-group">
-                                    <label>Luftmængder (q Ind arves fra system)</label>
-                                    <div class="input-field-group">
-                                        <div class="input-group"><label for="${id('sys_tee_q_straight')}">q Ligeud</label><div class="input-unit-wrapper" data-unit="m³/h"><input type="text" id="${id('sys_tee_q_straight')}" class="input-field"></div></div>
-                                        <div class="input-group"><label for="${id('sys_tee_q_branch')}">q Afgrening</label><div class="input-unit-wrapper" data-unit="m³/h"><input type="text" id="${id('sys_tee_q_branch')}" class="input-field"></div></div>
+                            if (flowType === 'splitting') {
+                                teeContainer.innerHTML = `
+                                    <div class="sub-group">
+                                        <label>Luftmængder (q Ind arves fra system)</label>
+                                        <div class="input-field-group">
+                                            <div class="input-group"><label for="${id('sys_tee_q_straight')}">q Ligeud</label><div class="input-unit-wrapper" data-unit="m³/h"><input type="text" id="${id('sys_tee_q_straight')}" class="input-field"></div></div>
+                                            <div class="input-group"><label for="${id('sys_tee_q_branch')}">q Afgrening</label><div class="input-unit-wrapper" data-unit="m³/h"><input type="text" id="${id('sys_tee_q_branch')}" class="input-field"></div></div>
+                                        </div>
                                     </div>
-                                </div>
-                                <div class="sub-group">${diameterInputs}</div>
-                                <div class="sub-group">
-                                    <label>Hvilken gren fortsætter systemet med?</label>
-                                    <div class="radio-group"> 
-                                        <input type="radio" id="${id('sysTeePathStraight')}" name="${id('sysTeePath')}" value="straight" checked><label for="${id('sysTeePathStraight')}">Ligeud</label> 
-                                        <input type="radio" id="${id('sysTeePathBranch')}" name="${id('sysTeePath')}" value="branch"><label for="${id('sysTeePathBranch')}">Afgrening</label> 
+                                    <div class="sub-group">${diameterInputs}</div>
+                                    <div class="sub-group">
+                                        <label>Hvilken gren fortsætter systemet med?</label>
+                                        <div class="radio-group"> 
+                                            <input type="radio" id="${id('sysTeePathStraight')}" name="${id('sysTeePath')}" value="straight" checked><label for="${id('sysTeePathStraight')}">Ligeud</label> 
+                                            <input type="radio" id="${id('sysTeePathBranch')}" name="${id('sysTeePath')}" value="branch"><label for="${id('sysTeePathBranch')}">Afgrening</label> 
+                                        </div>
                                     </div>
-                                </div>
-                                <div class="sub-group">
-                                    <label for="${id('sys_orientation')}">Afgreningens Retning (3D)</label>
-                                    <select id="${id('sys_orientation')}" class="input-field">${orientationOptions}</select>
-                                </div>
-                            `;
-                        } else { // merging
-                            teeContainer.innerHTML = `
-                                 <div class="sub-group">
-                                    <label>Luftmængder (q Ud bliver ny system-luftmængde)</label>
-                                    <div class="input-field-group">
-                                        <div class="input-group"><label for="${id('sys_tee_q_straight')}">q Ligeud (Ind)</label><div class="input-unit-wrapper" data-unit="m³/h"><input type="text" id="${id('sys_tee_q_straight')}" class="input-field"></div></div>
-                                        <div class="input-group"><label for="${id('sys_tee_q_branch')}">q Afgrening (Ind)</label><div class="input-unit-wrapper" data-unit="m³/h"><input type="text" id="${id('sys_tee_q_branch')}" class="input-field"></div></div>
+                                    <div class="sub-group">
+                                        <label for="${id('sys_orientation')}">Afgreningens Retning (3D)</label>
+                                        <select id="${id('sys_orientation')}" class="input-field">${orientationOptions}</select>
                                     </div>
-                                </div>
-                                <div class="sub-group">${diameterInputs}</div>
-                                 <div class="sub-group">
-                                    <label>Hvilket indløbs tryktab skal medregnes?</label>
-                                    <div class="radio-group"> 
-                                        <input type="radio" id="${id('sysTeePathStraight')}" name="${id('sysTeePath')}" value="straight" checked><label for="${id('sysTeePathStraight')}">Ligeud</label> 
-                                        <input type="radio" id="${id('sysTeePathBranch')}" name="${id('sysTeePath')}" value="branch"><label for="${id('sysTeePathBranch')}">Afgrening</label> 
+                                `;
+                            } else { // merging
+                                teeContainer.innerHTML = `
+                                    <div class="sub-group">
+                                        <label>Luftmængder (q Ud bliver ny system-luftmængde)</label>
+                                        <div class="input-field-group">
+                                            <div class="input-group"><label for="${id('sys_tee_q_straight')}">q Ligeud (Ind)</label><div class="input-unit-wrapper" data-unit="m³/h"><input type="text" id="${id('sys_tee_q_straight')}" class="input-field"></div></div>
+                                            <div class="input-group"><label for="${id('sys_tee_q_branch')}">q Afgrening (Ind)</label><div class="input-unit-wrapper" data-unit="m³/h"><input type="text" id="${id('sys_tee_q_branch')}" class="input-field"></div></div>
+                                        </div>
                                     </div>
-                                </div>
-                                <div class="sub-group">
-                                    <label for="${id('sys_orientation')}">Afgreningens Retning (3D)</label>
-                                    <select id="${id('sys_orientation')}" class="input-field">${orientationOptions}</select>
-                                </div>
-                            `;
-                        }
-
-                        // Prefill Tee data if editing
-                        if (initialData && initialData.properties) {
-                            const data = initialData.properties;
-                            if (document.getElementById(id('sys_tee_q_straight'))) document.getElementById(id('sys_tee_q_straight')).value = data.q_straight || '';
-                            if (document.getElementById(id('sys_tee_q_branch'))) document.getElementById(id('sys_tee_q_branch')).value = data.q_branch || '';
-                            if (document.getElementById(id('sys_tee_q_out1'))) document.getElementById(id('sys_tee_q_out1')).value = data.q_out1 || '';
-                            if (document.getElementById(id('sys_tee_q_out2'))) document.getElementById(id('sys_tee_q_out2')).value = data.q_out2 || '';
-
-                            if (data.d_in && document.getElementById(id('sys_tee_d_in'))) document.getElementById(id('sys_tee_d_in')).value = data.d_in;
-                            if (data.d_straight && document.getElementById(id('sys_tee_d_straight'))) document.getElementById(id('sys_tee_d_straight')).value = data.d_straight;
-                            if (data.d_branch && document.getElementById(id('sys_tee_d_branch'))) document.getElementById(id('sys_tee_d_branch')).value = data.d_branch;
-
-                            if (data.path) {
-                                const rad = document.querySelector(`input[name="${id('sysTeePath')}"][value="${data.path}"]`);
-                                if (rad) rad.checked = true;
+                                    <div class="sub-group">${diameterInputs}</div>
+                                    <div class="sub-group">
+                                        <label>Hvilket indløbs tryktab skal medregnes?</label>
+                                        <div class="radio-group"> 
+                                            <input type="radio" id="${id('sysTeePathStraight')}" name="${id('sysTeePath')}" value="straight" checked><label for="${id('sysTeePathStraight')}">Ligeud</label> 
+                                            <input type="radio" id="${id('sysTeePathBranch')}" name="${id('sysTeePath')}" value="branch"><label for="${id('sysTeePathBranch')}">Afgrening</label> 
+                                        </div>
+                                    </div>
+                                    <div class="sub-group">
+                                        <label for="${id('sys_orientation')}">Afgreningens Retning (3D)</label>
+                                        <select id="${id('sys_orientation')}" class="input-field">${orientationOptions}</select>
+                                    </div>
+                                `;
                             }
-                            if (data.orientation && document.getElementById(id('sys_orientation'))) {
-                                document.getElementById(id('sys_orientation')).value = data.orientation;
+
+                            // Prefill Tee data if editing
+                            if (initialData && initialData.properties) {
+                                const data = initialData.properties;
+                                if (document.getElementById(id('sys_tee_q_straight'))) document.getElementById(id('sys_tee_q_straight')).value = data.q_straight || '';
+                                if (document.getElementById(id('sys_tee_q_branch'))) document.getElementById(id('sys_tee_q_branch')).value = data.q_branch || '';
+                                if (document.getElementById(id('sys_tee_q_out1'))) document.getElementById(id('sys_tee_q_out1')).value = data.q_out1 || '';
+                                if (document.getElementById(id('sys_tee_q_out2'))) document.getElementById(id('sys_tee_q_out2')).value = data.q_out2 || '';
+
+                                if (data.d_in && document.getElementById(id('sys_tee_d_in'))) document.getElementById(id('sys_tee_d_in')).value = data.d_in;
+                                if (data.d_straight && document.getElementById(id('sys_tee_d_straight'))) document.getElementById(id('sys_tee_d_straight')).value = data.d_straight;
+                                if (data.d_branch && document.getElementById(id('sys_tee_d_branch'))) document.getElementById(id('sys_tee_d_branch')).value = data.d_branch;
+
+                                if (data.flowType) {
+                                    const rad = document.querySelector(`input[name="${id('sysTeeFlowType')}"][value="${data.flowType}"]`);
+                                    if (rad) rad.checked = true;
+                                }
+                                if (data.path) {
+                                    const rad = document.querySelector(`input[name="${id('sysTeePath')}"][value="${data.path}"]`);
+                                    if (rad) rad.checked = true;
+                                }
+                                if (data.orientation && document.getElementById(id('sys_orientation'))) {
+                                    document.getElementById(id('sys_orientation')).value = data.orientation;
+                                }
                             }
+                        };
+                        teeFlowTypeRadios.forEach(r => r.addEventListener('change', renderTeeInputs));
+                        renderTeeInputs();
+                    }
+                }, 0);
+            } else {
+                // System Builder Mode: Clean and generic Tee input form.
+                // Physics engine will automatically decide if it's merging/splitting based on global systemType.
+                const isSym = fittingType === 'tee_sym';
+                const diameterInputs = isSym ?
+                    `<div class="input-group"><label>Diameter (alle grene)</label><select id="${id('sys_tee_d_in')}" class="input-field">${roundOptions}</select></div>` :
+                    `<div class="input-field-group">
+                        <div class="input-group"><label for="${id('sys_tee_d_in')}">Ø Ind/Ud</label><select id="${id('sys_tee_d_in')}" class="input-field">${roundOptions}</select></div>
+                        <div class="input-group"><label for="${id('sys_tee_d_straight')}">Ø Ligeud</label><select id="${id('sys_tee_d_straight')}" class="input-field">${roundOptions}</select></div>
+                        <div class="input-group"><label for="${id('sys_tee_d_branch')}">Ø Afgrening</label><select id="${id('sys_tee_d_branch')}" class="input-field">${roundOptions}</select></div>
+                    </div>`;
+
+                inputsHtml = `
+                    <div id="${id('teeSpecificInputs')}">
+                        <div class="sub-group">
+                            <label>Luftmængder (i grene ud fra T-Stykket)</label>
+                            <div class="input-field-group">
+                                <div class="input-group"><label for="${id('sys_tee_q_straight')}">q Ligeud</label><div class="input-unit-wrapper" data-unit="m³/h"><input type="text" id="${id('sys_tee_q_straight')}" class="input-field"></div></div>
+                                <div class="input-group"><label for="${id('sys_tee_q_branch')}">q Afgrening</label><div class="input-unit-wrapper" data-unit="m³/h"><input type="text" id="${id('sys_tee_q_branch')}" class="input-field"></div></div>
+                            </div>
+                        </div>
+                        <div class="sub-group">${diameterInputs}</div>
+                        <div class="sub-group">
+                            <label>Hvilken gren fortsætter du din linje på?</label>
+                            <div class="radio-group"> 
+                                <input type="radio" id="${id('sysTeePathStraight')}" name="${id('sysTeePath')}" value="straight" checked><label for="${id('sysTeePathStraight')}">Ligeud</label> 
+                                <input type="radio" id="${id('sysTeePathBranch')}" name="${id('sysTeePath')}" value="branch"><label for="${id('sysTeePathBranch')}">Afgrening</label> 
+                            </div>
+                        </div>
+                        <div class="sub-group">
+                            <label for="${id('sys_orientation')}">Afgreningens Retning (3D)</label>
+                            <select id="${id('sys_orientation')}" class="input-field">${orientationOptions}</select>
+                        </div>
+                        <!-- Hidden value so the data parser doesn't crash on legacy properties -->
+                        <input type="hidden" name="${id('sysTeeFlowType')}" id="${id('sysTeeFlowType')}_hidden" value="splitting" checked>
+                    </div>`;
+
+                // Set timeout to prefill data if present
+                setTimeout(() => {
+                    if (initialData && initialData.properties) {
+                        const data = initialData.properties;
+                        if (document.getElementById(id('sys_tee_q_straight'))) document.getElementById(id('sys_tee_q_straight')).value = data.q_straight || '';
+                        if (document.getElementById(id('sys_tee_q_branch'))) document.getElementById(id('sys_tee_q_branch')).value = data.q_branch || '';
+                        if (data.d_in && document.getElementById(id('sys_tee_d_in'))) document.getElementById(id('sys_tee_d_in')).value = data.d_in;
+                        if (data.d_straight && document.getElementById(id('sys_tee_d_straight'))) document.getElementById(id('sys_tee_d_straight')).value = data.d_straight;
+                        if (data.d_branch && document.getElementById(id('sys_tee_d_branch'))) document.getElementById(id('sys_tee_d_branch')).value = data.d_branch;
+                        if (data.path) {
+                            const rad = document.querySelector(`input[name="${id('sysTeePath')}"][value="${data.path}"]`);
+                            if (rad) rad.checked = true;
                         }
-                    };
-                    teeFlowTypeRadios.forEach(r => r.addEventListener('change', renderTeeInputs));
-                    renderTeeInputs();
-                }
-            }, 0);
+                        if (data.orientation && document.getElementById(id('sys_orientation'))) {
+                            document.getElementById(id('sys_orientation')).value = data.orientation;
+                        }
+                    }
+                }, 0);
+            }
             break;
         case 'tee_bullhead':
             inputsHtml = `
@@ -1117,9 +1185,9 @@ export function renderSystemFittingInputs(container = null, initialData = null) 
         <div style="margin-top:15px; border-top: 1px solid var(--border-color); padding-top: 10px;">
             <strong style="font-size: 0.9rem; color: var(--text-color);">Termodynamik & Isolering</strong>
             <div class="input-field-group" style="margin-top:10px;">
-                <div class="input-group"><label for="${id('sys_ambient')}">Omgivelsestemp.</label><div class="input-unit-wrapper" data-unit="°C"><input type="text" id="${id('sys_ambient')}" class="input-field" placeholder="auto"></div></div>
-                <div class="input-group"><label for="${id('sys_isoThick')}">Isoleringstykkelse</label><div class="input-unit-wrapper" data-unit="mm"><input type="text" id="${id('sys_isoThick')}" class="input-field" placeholder="0"></div></div>
-                <div class="input-group"><label for="${id('sys_isoLambda')}">Isolering Lambda (λ)</label><input type="text" id="${id('sys_isoLambda')}" class="input-field" placeholder="0.037"></div>
+                <div class="input-group"><label for="${id('fittingAmbient')}">Rummets Temp.</label><div class="input-unit-wrapper" data-unit="°C"><input type="text" id="${id('fittingAmbient')}" class="input-field" placeholder="auto"></div></div>
+                <div class="input-group"><label for="${id('fittingIsoThick')}">Isoleringstykkelse</label><div class="input-unit-wrapper" data-unit="mm"><input type="text" id="${id('fittingIsoThick')}" class="input-field" placeholder="0"></div></div>
+                <div class="input-group"><label for="${id('fittingIsoLambda')}">Isolering Lambda (λ)</label><input type="text" id="${id('fittingIsoLambda')}" class="input-field" placeholder="0.037"></div>
             </div>
         </div>`;
         targetContainer.innerHTML = inputsHtml + `<button type="button" class="button primary" onclick="${btnAction}">${btnText}</button>`;

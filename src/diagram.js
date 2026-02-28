@@ -25,32 +25,32 @@ function getColorByValue(val, mode, min, max) {
     if (range <= 0) range = 1;
     let t = Math.max(0, Math.min(1, (val - min) / range));
 
+    let r, g, b;
     // Temperature (Blue -> Green -> Yellow -> Red)
     if (mode === 'temperature') {
-        let r, g, b;
         if (t < 0.33) {
             const p = t / 0.33;
-            r = 0; g = 150 * p; b = 255;
+            r = 0; g = Math.round(150 * p); b = 255;
         } else if (t < 0.66) {
             const p = (t - 0.33) / 0.33;
-            r = 255 * p; g = 150 + 105 * p; b = 255 * (1 - p);
+            r = Math.round(255 * p); g = Math.round(150 + 105 * p); b = Math.round(255 * (1 - p));
         } else {
             const p = (t - 0.66) / 0.34;
-            r = 255; g = 255 * (1 - p); b = 0;
+            r = 255; g = Math.round(255 * (1 - p)); b = 0;
         }
-        return new THREE.Color(r / 255, g / 255, b / 255).getHex();
+    } else {
+        // Default Gradient for Pressure/Velocity (Blue -> Green -> Red)
+        if (t < 0.5) {
+            const p = t * 2;
+            r = 0; g = Math.round(255 * p); b = Math.round(255 * (1 - p));
+        } else {
+            const p = (t - 0.5) * 2;
+            r = Math.round(255 * p); g = Math.round(255 * (1 - p)); b = 0;
+        }
     }
 
-    // Default Gradient (Blue -> Green -> Red)
-    let r, g, b;
-    if (t < 0.5) {
-        const p = t * 2;
-        r = 0; g = p; b = 1 - p;
-    } else {
-        const p = (t - 0.5) * 2;
-        r = p; g = 1 - p; b = 0;
-    }
-    return new THREE.Color(r, g, b).getHex();
+    // Convert RGB (0-255) to Hex Number
+    return (r << 16) | (g << 8) | b;
 }
 
 function getColor(comp, mode, min, max) {
@@ -97,7 +97,68 @@ export function renderDiagram(keepControls = false) {
     const container = document.getElementById('systemDiagramContainer');
     if (!container) return;
 
-    const components = getSystemComponents();
+    // Helper for generating dynamic transition buffer geometry
+    function createTransitionGeometry(shape1, w1, h1, r1, shape2, w2, h2, r2, length) {
+        const segments = 16;
+        const positions = [];
+        const indices = [];
+        const uvs = [];
+
+        function buildProfile(shape, w, h, r, yPos, vCoord) {
+            const p = [];
+            if (shape === 'round') {
+                for (let i = 0; i < segments; i++) {
+                    const a = (i / segments) * Math.PI * 2;
+                    p.push(new THREE.Vector3(Math.cos(a) * r, yPos, Math.sin(a) * r));
+                }
+            } else {
+                const hw = w / 2, hh = h / 2;
+                const corners = [
+                    new THREE.Vector3(hw, yPos, hh),
+                    new THREE.Vector3(-hw, yPos, hh),
+                    new THREE.Vector3(-hw, yPos, -hh),
+                    new THREE.Vector3(hw, yPos, -hh)
+                ];
+                for (let c = 0; c < 4; c++) {
+                    const start = corners[c];
+                    const end = corners[(c + 1) % 4];
+                    for (let i = 0; i < 4; i++) {
+                        p.push(start.clone().lerp(end, i / 4));
+                    }
+                }
+            }
+            p.forEach((v, i) => {
+                positions.push(v.x, v.y, v.z);
+                uvs.push(i / segments, vCoord);
+            });
+        }
+
+        buildProfile(shape1, w1, h1, r1, -length / 2, 0);
+        buildProfile(shape2, w2, h2, r2, length / 2, 1);
+
+        for (let i = 0; i < segments; i++) {
+            const next_i = (i + 1) % segments;
+            const b1 = i, b2 = next_i;
+            const t1 = i + segments, t2 = next_i + segments;
+
+            indices.push(b1, t2, t1); // Note: orientation might be backwards dependent on view
+            indices.push(b1, b2, t2);
+        }
+
+        const geom = new THREE.BufferGeometry();
+        geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        geom.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+        geom.setIndex(indices);
+        geom.computeVertexNormals();
+
+        return geom;
+    }
+
+    // Use full state to check systemType
+    const fullState = window.stateManager ? window.stateManager.state : { systemComponents: [] };
+    const components = fullState.systemComponents || getSystemComponents();
+    const isExhaust = fullState.systemType === 'merging';
+
     if (components.length === 0) {
         container.innerHTML = '<p style="text-align:center;color:#666;">Ingen komponenter at vise i 3D.</p>';
         return;
@@ -111,6 +172,7 @@ export function renderDiagram(keepControls = false) {
         container.style.position = 'relative';
         container.innerHTML = `
             <div id="diagramOverlayControls" class="diagram-overlay-container" style="position:absolute; top:10px; right:10px; z-index:100; background:rgba(0,0,0,0.8); padding:10px; border-radius:8px; color:white;">
+                 <button class="button" style="width:100%; margin-bottom:8px; padding:4px; font-size:0.8rem; background:var(--primary-color); color:white; border:none; cursor:pointer;" onclick="window.zoomAllDiagram()"><i class="fas fa-expand"></i> Zoom Alt</button>
                  <select id="diagramColorMode" class="input-field" style="width:100%;font-size:0.8rem;" onchange="window.updateDiagramSettings()">
                     <option value="default" ${diagramSettings.colorMode === 'default' ? 'selected' : ''}>Farve: Standard</option>
                     <option value="velocity" ${diagramSettings.colorMode === 'velocity' ? 'selected' : ''}>Farve: Hastighed</option>
@@ -122,6 +184,9 @@ export function renderDiagram(keepControls = false) {
                     <option value="detailed" ${diagramSettings.labelMode === 'detailed' ? 'selected' : ''}>Tekst: Detaljer</option>
                     <option value="none" ${diagramSettings.labelMode === 'none' ? 'selected' : ''}>Tekst: Skjul</option>
                  </select>
+            </div>
+            <div id="diagramLegend" style="position:absolute; bottom:20px; left:20px; z-index:100; background:rgba(0,0,0,0.8); padding:10px; border-radius:8px; color:white; font-size: 0.8rem; display: none;">
+                <!-- Legend goes here -->
             </div>
             <div id="diagramWebglContainer" style="width:100%; height:100%; min-height: 500px; background:#111;"></div>
             <div id="diagramLabels" style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:50;"></div>
@@ -141,6 +206,7 @@ export function renderDiagram(keepControls = false) {
         controls = new OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
         controls.dampingFactor = 0.05;
+        controls.screenSpacePanning = true; // Use more intuitive screen-bound panning vs flat ground panning
 
         // Lights
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
@@ -198,6 +264,42 @@ export function renderDiagram(keepControls = false) {
     if (maxT === -Infinity) { maxT = 30; minT = 5; }
     let currentMin = diagramSettings.colorMode === 'velocity' ? minV : (diagramSettings.colorMode === 'pressure' ? minP : minT);
     let currentMax = diagramSettings.colorMode === 'velocity' ? maxV : (diagramSettings.colorMode === 'pressure' ? maxP : maxT);
+
+    // Update Legend UI
+    const legendContainer = document.getElementById('diagramLegend');
+    if (legendContainer) {
+        if (diagramSettings.colorMode === 'default') {
+            legendContainer.style.display = 'none';
+        } else {
+            legendContainer.style.display = 'block';
+            let title = '';
+            let unit = '';
+            let gradientCss = '';
+
+            if (diagramSettings.colorMode === 'temperature') {
+                title = 'Temperatur';
+                unit = '°C';
+                gradientCss = 'linear-gradient(to right, #0096FF, #00FF00, #FFFF00, #FF0000)';
+            } else if (diagramSettings.colorMode === 'velocity') {
+                title = 'Lufthastighed';
+                unit = 'm/s';
+                gradientCss = 'linear-gradient(to right, #0000FF, #00FF00, #FF0000)';
+            } else if (diagramSettings.colorMode === 'pressure') {
+                title = 'Tryktab (Kanaler)';
+                unit = 'Pa';
+                gradientCss = 'linear-gradient(to right, #0000FF, #00FF00, #FF0000)';
+            }
+
+            legendContainer.innerHTML = `
+                <div style="margin-bottom: 5px; font-weight: bold;">${title}</div>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
+                    <span>${currentMin.toFixed(1)} ${unit}</span>
+                    <span>${currentMax.toFixed(1)} ${unit}</span>
+                </div>
+                <div style="width: 200px; height: 10px; background: ${gradientCss}; border-radius: 5px;"></div>
+            `;
+        }
+    }
 
     // --- 3. Recursive 3D Drawing ---
     const materialCache = {};
@@ -294,11 +396,25 @@ export function renderDiagram(keepControls = false) {
         }
 
         // Basic dimensions
+        let isRect = false;
         let diameterMm = 200; // default
+        let widthMm = 200;
+        let heightMm = 200;
+
         const dim = comp.state?.inletDimension || comp.state?.outletDimension?.outlet || comp.state?.outletDimension?.straight;
-        if (dim && dim.d) diameterMm = dim.d;
-        else if (dim && dim.w) diameterMm = dim.w; // simplified for rect
+        if (dim) {
+            if (dim.shape === 'rectangular' || dim.shape === 'rect') {
+                isRect = true;
+                widthMm = dim.w || dim.sideB || 200;
+                heightMm = dim.h || dim.sideA || 200;
+            } else {
+                diameterMm = dim.d || dim.diameter || 200;
+            }
+        }
+
         const radius3D = (diameterMm / 1000) * PIXELS_PER_METER / 2;
+        const width3D = (widthMm / 1000) * PIXELS_PER_METER;
+        const height3D = (heightMm / 1000) * PIXELS_PER_METER;
 
         let moveDist = 60; // default length
         let nextDir = currentDir.clone();
@@ -313,7 +429,14 @@ export function renderDiagram(keepControls = false) {
             const len_m = comp.properties?.length || 1;
             moveDist = (len_m * PIXELS_PER_METER);
 
-            const geometry = new THREE.CylinderGeometry(radius3D, radius3D, moveDist, 16);
+            let geometry;
+            if (isRect) {
+                // Box: width (X), length (Y), height (Z) in Three.js coordinates before rotation
+                geometry = new THREE.BoxGeometry(width3D, moveDist, height3D);
+            } else {
+                geometry = new THREE.CylinderGeometry(radius3D, radius3D, moveDist, 16);
+            }
+
             geometry.translate(0, moveDist / 2, 0);
             geometry.rotateX(Math.PI / 2);
 
@@ -350,7 +473,26 @@ export function renderDiagram(keepControls = false) {
             nextPos = cornerPos.clone().add(nextDir.clone().multiplyScalar(cornerDist));
 
             const curve = new THREE.QuadraticBezierCurve3(currentPos, cornerPos, nextPos);
-            const geometry = new THREE.TubeGeometry(curve, 20, radius3D, 16, false);
+
+            let geometry;
+            if (isRect) {
+                const rectShape = new THREE.Shape();
+                rectShape.moveTo(-width3D / 2, -height3D / 2);
+                rectShape.lineTo(width3D / 2, -height3D / 2);
+                rectShape.lineTo(width3D / 2, height3D / 2);
+                rectShape.lineTo(-width3D / 2, height3D / 2);
+                rectShape.lineTo(-width3D / 2, -height3D / 2);
+
+                const extrudeSettings = {
+                    steps: 20,
+                    bevelEnabled: false,
+                    extrudePath: curve
+                };
+                geometry = new THREE.ExtrudeGeometry(rectShape, extrudeSettings);
+            } else {
+                geometry = new THREE.TubeGeometry(curve, 20, radius3D, 16, false);
+            }
+
             const mesh = new THREE.Mesh(geometry, material);
             scene.add(mesh);
 
@@ -358,20 +500,53 @@ export function renderDiagram(keepControls = false) {
             moveDist = cornerDist * 2; // For bounding box approximation
         }
         else if (comp.type.includes('transition') || comp.type === 'expansion' || comp.type === 'contraction') {
-            const d1 = comp.properties?.d1 || diameterMm;
-            const d2 = comp.properties?.d2 || diameterMm;
-            const r1 = (d1 / 1000) * PIXELS_PER_METER / 2;
-            const r2 = (d2 / 1000) * PIXELS_PER_METER / 2;
+            const dim1 = comp.state?.inletDimension;
+            const dim2 = comp.state?.outletDimension?.outlet;
+
+            let w1 = 200, h1 = 200, r1 = 100, shape1 = 'round';
+            if (dim1) {
+                if (dim1.shape === 'rectangular' || dim1.shape === 'rect') {
+                    shape1 = 'rect';
+                    w1 = dim1.w || dim1.sideB || 200;
+                    h1 = dim1.h || dim1.sideA || 200;
+                    r1 = Math.max(w1, h1) / 2;
+                } else {
+                    r1 = (dim1.d || dim1.diameter || 200) / 2;
+                    w1 = r1 * 2;
+                    h1 = r1 * 2;
+                }
+            }
+
+            let w2 = 200, h2 = 200, r2 = 100, shape2 = 'round';
+            if (dim2) {
+                if (dim2.shape === 'rectangular' || dim2.shape === 'rect') {
+                    shape2 = 'rect';
+                    w2 = dim2.w || dim2.sideB || 200;
+                    h2 = dim2.h || dim2.sideA || 200;
+                    r2 = Math.max(w2, h2) / 2;
+                } else {
+                    r2 = (dim2.d || dim2.diameter || 200) / 2;
+                    w2 = r2 * 2;
+                    h2 = r2 * 2;
+                }
+            }
+
+            // Scale to 3D pixels
+            w1 = (w1 / 1000) * PIXELS_PER_METER; h1 = (h1 / 1000) * PIXELS_PER_METER; r1 = (r1 / 1000) * PIXELS_PER_METER;
+            w2 = (w2 / 1000) * PIXELS_PER_METER; h2 = (h2 / 1000) * PIXELS_PER_METER; r2 = (r2 / 1000) * PIXELS_PER_METER;
+
             const angleDeg = comp.properties?.angle || 30;
+            const deltaMax = Math.max(Math.abs(w1 - w2) / 2, Math.abs(h1 - h2) / 2, Math.abs(r1 - r2));
+            moveDist = (deltaMax / Math.tan(THREE.MathUtils.degToRad(angleDeg / 2))) || 40;
+            if (moveDist < 10) moveDist = 40;
 
-            const deltaR = Math.abs(r1 - r2);
-            moveDist = (deltaR / Math.tan(THREE.MathUtils.degToRad(angleDeg / 2))) || 40;
-
-            const geometry = new THREE.CylinderGeometry(r2, r1, moveDist, 16);
+            const geometry = createTransitionGeometry(shape1, w1, h1, r1, shape2, w2, h2, r2, moveDist);
+            // Center is Y=0, move bottom to 0
             geometry.translate(0, moveDist / 2, 0);
             geometry.rotateX(Math.PI / 2);
 
             const mesh = new THREE.Mesh(geometry, material);
+            mesh.material.side = THREE.DoubleSide; // To avoid culling if normals are inversed
             mesh.position.copy(currentPos);
             mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), currentDir);
             scene.add(mesh);
@@ -394,12 +569,20 @@ export function renderDiagram(keepControls = false) {
             branchDir = currentDir.clone().applyAxisAngle(axis, branchTurn * turnSign).normalize();
             branchUp = nextUp.clone().applyAxisAngle(axis, branchTurn * turnSign).normalize();
 
-            moveDist = Math.max(radius3D * 4, 60);
+            moveDist = Math.max(radius3D * 4, width3D * 2, 60);
             const stubLen = moveDist / 2;
             const branchRadius = ((comp.properties?.d_branch || diameterMm) / 1000) * PIXELS_PER_METER / 2;
+            const branchWidth = ((comp.properties?.w_branch || widthMm) / 1000) * PIXELS_PER_METER;
+            const branchHeight = ((comp.properties?.h_branch || heightMm) / 1000) * PIXELS_PER_METER;
+            const isBranchRect = comp.properties?.w_branch !== undefined || (isRect && comp.properties?.d_branch === undefined);
 
             // Main stub
-            const gS = new THREE.CylinderGeometry(radius3D, radius3D, moveDist, 16);
+            let gS;
+            if (isRect) {
+                gS = new THREE.BoxGeometry(width3D, moveDist, height3D);
+            } else {
+                gS = new THREE.CylinderGeometry(radius3D, radius3D, moveDist, 16);
+            }
             gS.translate(0, moveDist / 2, 0);
             gS.rotateX(Math.PI / 2);
             const meshS = new THREE.Mesh(gS, material);
@@ -409,7 +592,12 @@ export function renderDiagram(keepControls = false) {
 
             // Branch stub
             const midPos = currentPos.clone().add(currentDir.clone().multiplyScalar(stubLen));
-            const gB = new THREE.CylinderGeometry(branchRadius, branchRadius, stubLen, 16);
+            let gB;
+            if (isBranchRect) {
+                gB = new THREE.BoxGeometry(branchWidth, stubLen, branchHeight);
+            } else {
+                gB = new THREE.CylinderGeometry(branchRadius, branchRadius, stubLen, 16);
+            }
             gB.translate(0, stubLen / 2, 0);
             gB.rotateX(Math.PI / 2);
             const meshB = new THREE.Mesh(gB, material);
@@ -463,12 +651,17 @@ export function renderDiagram(keepControls = false) {
 
         const drawOpenEnd = (pos, dir) => {
             const arrowLength = 50;
-            const arrowHelper = new THREE.ArrowHelper(dir, pos, arrowLength, 0x00E4FF, 15, 10);
+            const arrowDir = isExhaust ? dir.clone().negate() : dir;
+            // Shift arrow position slightly if pulling inwards so it doesn't clip into the tube
+            const arrowPos = isExhaust ? pos.clone().add(dir.clone().multiplyScalar(arrowLength)) : pos;
+
+            const arrowHelper = new THREE.ArrowHelper(arrowDir, arrowPos, arrowLength, 0x00E4FF, 15, 10);
             scene.add(arrowHelper);
 
             const outFlow = comp.state?.airflow_out?.outlet || comp.state?.airflow_out?.outlet_straight || comp.state?.airflow_out?.outlet_branch || comp.state?.airflow_in || 0;
             const flow = Math.round(outFlow);
             const temp = comp.state?.temperature_out?.outlet || comp.state?.temperature_out?.outlet_straight || comp.state?.temperature_in || 20;
+            const endText = isExhaust ? 'Udsugning' : 'Indblæsning';
 
             const div = document.createElement('div');
             div.className = 'diagram-label end-label';
@@ -482,9 +675,10 @@ export function renderDiagram(keepControls = false) {
             div.style.fontSize = '11px';
             div.style.pointerEvents = 'none';
             div.style.whiteSpace = 'pre';
-            div.innerText = `${flow} m³/h\n${temp.toFixed(1)} °C`;
+            div.style.textAlign = 'center';
+            div.innerText = `${endText}\n${flow} m³/h\n${temp.toFixed(1)} °C`;
             labelsContainer.appendChild(div);
-            labelsMap.set(div, pos.clone().add(dir.clone().multiplyScalar(arrowLength + 5)));
+            labelsMap.set(div, pos.clone().add(dir.clone().multiplyScalar(arrowLength + 15)));
         };
 
         // --- Recurse ---
@@ -516,11 +710,14 @@ export function renderDiagram(keepControls = false) {
         const startUp = new THREE.Vector3(0, 1, 0);
 
         // Draw initial inlet arrow
-        const arrowHelper = new THREE.ArrowHelper(startDir, new THREE.Vector3(-60, 0, 0), 60, 0x00E4FF, 15, 10);
+        const arrowDir = isExhaust ? startDir.clone().negate() : startDir;
+        const arrowStartPos = isExhaust ? new THREE.Vector3(0, 0, 0) : new THREE.Vector3(-60, 0, 0);
+        const arrowHelper = new THREE.ArrowHelper(arrowDir, arrowStartPos, 60, 0x00E4FF, 15, 10);
         scene.add(arrowHelper);
 
         const flow = Math.round(systemTree[0].state?.airflow_in || 0);
         const temp = systemTree[0].state?.temperature_in || 20;
+        const startText = isExhaust ? 'Udsugning' : 'Indtag';
 
         const div = document.createElement('div');
         div.className = 'diagram-label end-label';
@@ -534,9 +731,13 @@ export function renderDiagram(keepControls = false) {
         div.style.fontSize = '11px';
         div.style.pointerEvents = 'none';
         div.style.whiteSpace = 'pre';
-        div.innerText = `Indtag\n${flow} m³/h\n${temp.toFixed(1)} °C`;
+        div.style.textAlign = 'center';
+        div.innerText = `${startText}\n${flow} m³/h\n${temp.toFixed(1)} °C`;
         labelsContainer.appendChild(div);
-        labelsMap.set(div, new THREE.Vector3(-75, 0, 0));
+
+        // Position label slightly further out
+        const labelPos = isExhaust ? new THREE.Vector3(75, 0, 0) : new THREE.Vector3(-75, 0, 0);
+        labelsMap.set(div, labelPos);
 
         drawTree3D(systemTree[0], startPos, startDir, startUp);
     }
