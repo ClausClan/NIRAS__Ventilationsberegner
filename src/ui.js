@@ -218,24 +218,50 @@ export function renderSystem() {
     }
 
     let globalCriticalPressureDrop = 0;
+    let globalCriticalPathIds = [];
+
+    // Nulstil alle critical path flags først
+    flatComponents.forEach(c => {
+        if (c.state) c.state.isCriticalPath = false;
+    });
 
     function calculateCriticalPath(node) {
-        if (!node || node.isIncluded === false) return 0;
+        if (!node || node.isIncluded === false) return { loss: 0, path: [] };
+
         let pLoss = (node.state && node.state.pressureLoss) ? node.state.pressureLoss : 0;
         let maxChildLoss = 0;
+        let bestChildPath = [];
+
         if (node.children) {
             Object.values(node.children).forEach(childArray => {
                 childArray.forEach(child => {
-                    let childLoss = calculateCriticalPath(child);
-                    if (childLoss > maxChildLoss) maxChildLoss = childLoss;
+                    let result = calculateCriticalPath(child);
+                    if (result.loss > maxChildLoss) {
+                        maxChildLoss = result.loss;
+                        bestChildPath = result.path;
+                    }
                 });
             });
         }
-        return pLoss + maxChildLoss;
+
+        return {
+            loss: pLoss + maxChildLoss,
+            path: [node.id, ...bestChildPath]
+        };
     }
 
     if (systemTree.length > 0) {
-        globalCriticalPressureDrop = calculateCriticalPath(systemTree[0]);
+        const criticalResult = calculateCriticalPath(systemTree[0]);
+        globalCriticalPressureDrop = criticalResult.loss;
+        globalCriticalPathIds = criticalResult.path;
+
+        // Sæt flaget on den faktiske sti
+        globalCriticalPathIds.forEach(id => {
+            const comp = flatComponents.find(c => c.id === id);
+            if (comp && comp.state) {
+                comp.state.isCriticalPath = true;
+            }
+        });
     }
 
     function renderNode(c, depth, labelPath) {
@@ -244,6 +270,8 @@ export function renderSystem() {
         const velocity = state.velocity || null;
         let airflowDisp = state.airflow_in || c.airflow || 0;
         let airflowText = `${formatLocalFloat(airflowDisp, 0)} m³/h`;
+
+        let pressureText = `${formatLocalFloat(pressureLoss, 2)} Pa`;
 
         if (c.type && c.type.startsWith('tee_')) {
             const data = state.calculationDetails || {};
@@ -265,6 +293,14 @@ export function renderSystem() {
                 const pathStr = chosenPath === 'path2' ? 'Gren 2' : 'Gren 1';
                 let q_out = state.airflow_out ? (state.airflow_out['outlet_' + chosenPath] || state.airflow_out['outlet']) : undefined;
                 airflowText = `Ind: ${formatLocalFloat(airflowDisp, 0)}<br>${pathStr}: ${formatLocalFloat(q_out || 0, 0)}`;
+            }
+
+            // Optional: If calculationDetails has both losses, display them
+            if (data.loss_straight !== undefined && data.loss_branch !== undefined) {
+                pressureText = `Ligeud: ${formatLocalFloat(data.loss_straight, 2)} Pa<br>Afgrening: ${formatLocalFloat(data.loss_branch, 2)} Pa`;
+            } else if (c.state && c.state.pressureLoss !== undefined) {
+                // Fallback to the specific path loss computed in state
+                pressureText = `${formatLocalFloat(c.state.pressureLoss, 2)} Pa`;
             }
         }
 
@@ -312,7 +348,7 @@ export function renderSystem() {
                 <td>${airflowText}</td>
                 <td>${tempText}</td>
                 <td>${velocityText}</td>
-                <td>${formatLocalFloat(pressureLoss, 2)} Pa</td>
+                <td>${pressureText}</td>
                 <td>
                     <button class="details-btn edit-btn" style="background:none; border:none; cursor:pointer;" onclick="window.handleEditComponent('${c.id}')" title="Rediger">✏️</button>
                     ${detailsButton}
@@ -357,8 +393,8 @@ export function renderSystem() {
 
                 rowHtml += `
                     <tr class="add-node-row">
-                        <td colspan="6" style="padding-left: ${Math.max(0, childDepth * 25) + 10}px; padding-top:4px; padding-bottom:4px; opacity: 0.6;">
-                            <button class="button secondary" style="font-size: 0.75rem; padding: 2px 8px; border-radius: 4px;" onclick="window.showAddForm('${c.id}', '${portName}')">+ ${addLabel}</button>
+                        <td colspan="6" style="padding-left: ${Math.max(0, childDepth * 25) + 10}px; padding-top:4px; padding-bottom:4px;">
+                            <button class="button secondary" style="font-size: 0.75rem; padding: 4px 10px; border-radius: 4px;" onclick="window.showAddForm('${c.id}', '${portName}')">+ ${addLabel}</button>
                         </td>
                     </tr>
                 `;
@@ -1647,6 +1683,8 @@ export function showAddForm(parentId, parentPort) {
                 <option value="manualLoss">Manuelt Tab</option>
             </select>
         </div>
+        <!-- Hidden systemComponentType input so old logic doesn't crash on 'options' -->
+        <input type="hidden" id="systemComponentType" value="straightDuct">
         <div id="${containerId}"></div>
     `;
 }
@@ -1654,10 +1692,12 @@ export function showAddForm(parentId, parentPort) {
 export function handleInlineComponentTypeChange(containerId) {
     const inlineTypeSelect = document.getElementById('inlineComponentType');
     const container = document.getElementById(containerId);
+    const hiddenTypeSelect = document.getElementById('systemComponentType');
     if (!inlineTypeSelect || !container) return;
 
     const type = inlineTypeSelect.value;
     container.innerHTML = ''; // Clear old inputs
+    if (hiddenTypeSelect) hiddenTypeSelect.value = type;
 
     if (type === 'straightDuct') {
         renderSystemDuctInputs(container);

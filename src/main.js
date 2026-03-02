@@ -660,21 +660,15 @@ function getFittingData(suffix, typeOverride = null) {
                 name = properties.path === 'path1' ? `Dobbelt T (Gren 1)` : `Dobbelt T (Gren 2)`;
                 details = `Ø${properties.d_in} -> Ø${properties.d_out1}/Ø${properties.d_out2}`;
             } else {
-                properties.flowType = radio('sysTeeFlowType');
+                properties.flowType = radio('sysTeeFlowType') || 'splitting'; // Always fallback to splitting for UI structure
                 properties.path = radio('sysTeePath'); // straight or branch
                 properties.d_in = f('sys_tee_d_in');
                 properties.d_straight = isSym ? properties.d_in : f('sys_tee_d_straight');
                 properties.d_branch = isSym ? properties.d_in : f('sys_tee_d_branch');
 
-                if (properties.flowType === 'splitting') {
-                    properties.q_straight = f('sys_tee_q_straight');
-                    properties.q_branch = f('sys_tee_q_branch');
-                    name = properties.path === 'straight' ? `T-stykke (Ligeud)` : `T-stykke (Afgrening)`;
-                } else { // Merging
-                    properties.q_straight = f('sys_tee_q_straight');
-                    properties.q_branch = f('sys_tee_q_branch');
-                    name = properties.path === 'straight' ? `T-stykke (fra Ligeud)` : `T-stykke (fra Afgrening)`;
-                }
+                properties.q_straight = f('sys_tee_q_straight');
+                properties.q_branch = f('sys_tee_q_branch');
+                name = properties.path === 'straight' ? `T-stykke (Ligeud)` : `T-stykke (Afgrening)`;
             }
             break;
         }
@@ -938,20 +932,35 @@ function calculateComponentPhysics(component, incomingFlow, incomingTemp, incomi
                     temp_out = { 'outlet': incomingTemp, 'outlet_straight': incomingTemp, 'outlet_branch': incomingTemp };
                 }
 
-                const results = physics.calculateConvergingTeePressureLoss({ q_straight: p.q_straight, q_branch: p.q_branch }, { d_common: p.d_in, d_straight: p.d_straight, d_branch: p.d_branch }, RHO);
+                // Flow logic for merging: 
+                // incomingFlow is the total flow required by the downstream system (i.e. heading to the AHU)
+                // The T-piece user inputs q_straight and q_branch to define how it splits upstream.
+                // We should validate/normalize so they sum to incomingFlow if they don't exactly match.
+                let q_s = p.q_straight || ((incomingFlow || 0) / 2);
+                let q_b = p.q_branch || ((incomingFlow || 0) / 2);
+
+                // Optional: Force them to sum to incomingFlow for physical consistency
+                if (Math.abs((q_s + q_b) - incomingFlow) > 1 && incomingFlow > 0) {
+                    const ratio = incomingFlow / (q_s + q_b);
+                    q_s *= ratio;
+                    q_b *= ratio;
+                }
+
+                const results = physics.calculateConvergingTeePressureLoss({ q_straight: q_s, q_branch: q_b }, { d_common: p.d_in, d_straight: p.d_straight, d_branch: p.d_branch }, RHO);
                 if (p.path === 'straight') {
-                    pressureLoss = results.loss_straight;
-                    calculationDetails = results.details_straight;
+                    pressureLoss = results.loss_straight || 0;
+                    calculationDetails = results.details_straight || {};
                     inletDim = { shape: 'round', d: p.d_straight };
                 } else {
-                    pressureLoss = results.loss_branch;
-                    calculationDetails = results.details_branch;
+                    pressureLoss = results.loss_branch || 0;
+                    calculationDetails = results.details_branch || {};
                     inletDim = { shape: 'round', d: p.d_branch };
                 }
                 outletDim = { shape: 'round', d: p.d_in };
+
                 // For a merging tee, the children are physically upstream of the branches.
                 // We must define what airflow each branch takes so the recursion down the tree can pick it up.
-                airflow_out = { 'outlet_straight': p.q_straight, 'outlet_branch': p.q_branch, 'outlet': p.q_straight };
+                airflow_out = { 'outlet_straight': q_s, 'outlet_branch': q_b, 'outlet': q_s }; // default legacy outlet to straight
             }
             v = calculationDetails.v_ms || 0;
         }
@@ -962,7 +971,8 @@ function calculateComponentPhysics(component, incomingFlow, incomingTemp, incomi
             velocity: v,
             pressureLoss: pressureLoss,
             zeta: zeta,
-            inletDimension: inletDim,
+            inletDimension: inletDim, // Legacy, points to the active branch for split nodes
+            inletDimensions: { 'straight': { shape: 'round', d: p.d_main || p.d }, 'branch': { shape: 'round', d: p.d_branch } }, // Explicit multi-port inlets
             outletDimension: { 'outlet': outletDim },
             calculationDetails: calculationDetails,
             temperature_in: incomingTemp,
@@ -1046,8 +1056,23 @@ function recalculateSystem() {
         let currentParentPort = parentPort;
 
         // Check and Insert Transitions
-        if (incomingDim && newCalc.inletDimension && !physics.areDimensionsEqual(incomingDim, newCalc.inletDimension)) {
-            const transition = createTransitionComponent(incomingDim, newCalc.inletDimension, activeFlow, globalParams.globalFlowType, null);
+        // In Exhaust (merging), the parent's inlet/branch attaches to the child's outlet.
+        // In Supply (splitting), the parent's outlet attaches to the child's inlet.
+        let childAttachDim = newCalc.inletDimension;
+        if (globalParams.globalFlowType === 'merging') {
+            // In exhaust flow, an incomingDim belongs to the parent downstream.
+            // The child component's exit port facing the parent is its outlet. 
+            // T-pieces have single outlets but multiple inlets.
+            childAttachDim = newCalc.outletDimension ? (newCalc.outletDimension['outlet'] || newCalc.outletDimension['outlet_straight'] || newCalc.outletDimension['outlet_branch']) : newCalc.inletDimension;
+        }
+
+        if (incomingDim && childAttachDim && !physics.areDimensionsEqual(incomingDim, childAttachDim)) {
+            // For merging (exhaust), the parent is downstream, child is upstream.
+            // The air flows from childAttachDim -> incomingDim
+            const t_inlet = globalParams.globalFlowType === 'merging' ? childAttachDim : incomingDim;
+            const t_outlet = globalParams.globalFlowType === 'merging' ? incomingDim : childAttachDim;
+
+            const transition = createTransitionComponent(t_inlet, t_outlet, activeFlow, globalParams.globalFlowType, null);
             if (transition) {
                 transition.state = calculateComponentPhysics(transition, activeFlow, incomingTemp, incomingDim, globalParams, false);
                 stateManager.addSystemComponent(transition, currentParentId, currentParentPort, 'inlet');
@@ -1080,7 +1105,12 @@ function recalculateSystem() {
             }
 
             let portDim = null;
-            if (comp.state.outletDimension && comp.state.outletDimension[outPort]) {
+            if (globalParams.globalFlowType === 'merging' && comp.state.inletDimensions) {
+                // In exhaust, air flows from children into our inlets. The child connects to our specific inlet.
+                const branchMap = { 'outlet_straight': 'straight', 'outlet_branch': 'branch' };
+                const branchKey = branchMap[outPort] || 'straight';
+                portDim = comp.state.inletDimensions[branchKey];
+            } else if (comp.state.outletDimension && comp.state.outletDimension[outPort]) {
                 portDim = comp.state.outletDimension[outPort];
             } else if (comp.state.outletDimension && comp.state.outletDimension['outlet']) {
                 portDim = comp.state.outletDimension['outlet'];
@@ -1292,17 +1322,26 @@ window.handleInlineComponentSubmit = function (event) {
         currentAirflow = parentComp.airflow;
     }
 
+    // Determine correct suffix - if this was from the inline form container, we use '_inline', else empty string
+    // Wait, the button clicked could be either in 'systemComponentInputsContainer' or an inline container.
+    // If 'currentAddParentId' exists, it must be inline. If it's the root container, it could be either.
+    // However, the cleanest way is simply to check which DOM element triggered it, or check for existence of elements.
+    const isInline = !!document.getElementById('ductLength_inline') || !!document.getElementById('systemFittingType_inline');
+    const suffix = isInline ? '_inline' : '';
+
     let component = null;
 
     if (type === 'straightDuct') {
-        component = getDuctData('_inline');
+        component = getDuctData(suffix);
     } else if (type === 'fitting') {
-        const fittingTypeSelect = document.getElementById('inlineFittingType');
+        const fittingTypeSelect = document.getElementById('inlineFittingType') || document.getElementById('systemFittingType' + suffix);
         const fittingType = fittingTypeSelect ? fittingTypeSelect.value : null;
-        component = getFittingData('_inline', fittingType);
+        component = getFittingData(suffix, fittingType);
     } else if (type === 'manualLoss') {
-        const name = document.getElementById('manualDescription').value || 'Manuel Komponent';
-        const pressureLoss = parseLocalFloat(document.getElementById('manualPressureLoss').value);
+        const descId = document.getElementById('manualDescription' + suffix) ? 'manualDescription' + suffix : 'manualDescription';
+        const pressId = document.getElementById('manualPressureLoss' + suffix) ? 'manualPressureLoss' + suffix : 'manualPressureLoss';
+        const name = document.getElementById(descId).value || 'Manuel Komponent';
+        const pressureLoss = parseLocalFloat(document.getElementById(pressId).value);
         if (isNaN(pressureLoss)) {
             alert("Ugyldigt tryktab!");
             return;

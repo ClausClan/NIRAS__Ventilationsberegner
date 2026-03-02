@@ -54,6 +54,10 @@ function getColorByValue(val, mode, min, max) {
 }
 
 function getColor(comp, mode, min, max) {
+    if (mode === 'critical') {
+        return comp.state?.isCriticalPath ? 0xFF0055 : 0x3a7bd5; // Bright Magenta/Red vs Standard Blue
+    }
+
     let val = 0;
     if (mode === 'velocity') val = comp.state?.velocity || 0;
     else if (mode === 'pressure') val = comp.type === 'straightDuct' ? (comp.state?.calculationDetails?.pressureDrop || 0) : 0;
@@ -171,15 +175,16 @@ export function renderDiagram(keepControls = false) {
     if (!webglContainer || !renderer) {
         container.style.position = 'relative';
         container.innerHTML = `
-            <div id="diagramOverlayControls" class="diagram-overlay-container" style="position:absolute; top:10px; right:10px; z-index:100; background:rgba(0,0,0,0.8); padding:10px; border-radius:8px; color:white;">
+            <div id="diagramOverlayControls" class="diagram-overlay-container" style="position:absolute; top:10px; right:10px; z-index:100; background:rgba(0,0,0,0.8); padding:8px; border-radius:8px; color:white; width:33%; max-width:200px;">
                  <button class="button" style="width:100%; margin-bottom:8px; padding:4px; font-size:0.8rem; background:var(--primary-color); color:white; border:none; cursor:pointer;" onclick="window.zoomAllDiagram()"><i class="fas fa-expand"></i> Zoom Alt</button>
-                 <select id="diagramColorMode" class="input-field" style="width:100%;font-size:0.8rem;" onchange="window.updateDiagramSettings()">
+                 <select id="diagramColorMode" class="input-field" style="width:100%;font-size:0.8rem; padding:4px;" onchange="window.updateDiagramSettings()">
                     <option value="default" ${diagramSettings.colorMode === 'default' ? 'selected' : ''}>Farve: Standard</option>
                     <option value="velocity" ${diagramSettings.colorMode === 'velocity' ? 'selected' : ''}>Farve: Hastighed</option>
                     <option value="pressure" ${diagramSettings.colorMode === 'pressure' ? 'selected' : ''}>Farve: Tryktab</option>
                     <option value="temperature" ${diagramSettings.colorMode === 'temperature' ? 'selected' : ''}>Farve: Temperatur</option>
+                    <option value="critical" ${diagramSettings.colorMode === 'critical' ? 'selected' : ''}>Farve: Kritisk Vej</option>
                  </select>
-                 <select id="diagramLabelMode" class="input-field" style="width:100%;font-size:0.8rem; margin-top:5px;" onchange="window.updateDiagramSettings()">
+                 <select id="diagramLabelMode" class="input-field" style="width:100%;font-size:0.8rem; padding:4px; margin-top:5px;" onchange="window.updateDiagramSettings()">
                     <option value="name" ${diagramSettings.labelMode === 'name' ? 'selected' : ''}>Tekst: Navn</option>
                     <option value="detailed" ${diagramSettings.labelMode === 'detailed' ? 'selected' : ''}>Tekst: Detaljer</option>
                     <option value="none" ${diagramSettings.labelMode === 'none' ? 'selected' : ''}>Tekst: Skjul</option>
@@ -270,6 +275,14 @@ export function renderDiagram(keepControls = false) {
     if (legendContainer) {
         if (diagramSettings.colorMode === 'default') {
             legendContainer.style.display = 'none';
+        } else if (diagramSettings.colorMode === 'critical') {
+            legendContainer.style.display = 'block';
+            legendContainer.innerHTML = `
+                <div style="display: flex; align-items: center; font-weight: bold;">
+                    <div style="width: 15px; height: 15px; background-color: #FF0055; margin-right: 8px; border-radius: 3px;"></div>
+                    Kritisk Vej (Højeste Tryktab)
+                </div>
+            `;
         } else {
             legendContainer.style.display = 'block';
             let title = '';
@@ -311,8 +324,8 @@ export function renderDiagram(keepControls = false) {
         canvas.height = 1;
         const ctx = canvas.getContext('2d');
         const gradient = ctx.createLinearGradient(0, 0, 256, 0);
-        gradient.addColorStop(0, `#${colorHexStart.toString(16).padStart(6, '0')}`);
-        gradient.addColorStop(1, `#${colorHexEnd.toString(16).padStart(6, '0')}`);
+        gradient.addColorStop(0, `#${colorHexStart.toString(16).padStart(6, '0')} `);
+        gradient.addColorStop(1, `#${colorHexEnd.toString(16).padStart(6, '0')} `);
         ctx.fillStyle = gradient;
         ctx.fillRect(0, 0, 256, 1);
         const texture = new THREE.CanvasTexture(canvas);
@@ -327,9 +340,15 @@ export function renderDiagram(keepControls = false) {
         let colorHexEnd = 0x777777;
         let useGradient = false;
 
+        let isGhosted = !isIncluded;
+
         if (isIncluded) {
             colorHexStart = getColor(comp, mode, currentMin, currentMax);
             colorHexEnd = colorHexStart;
+
+            if (mode === 'critical' && !comp.state?.isCriticalPath) {
+                isGhosted = true;
+            }
 
             if (mode === 'temperature' && comp.state?.temperature_in !== undefined) {
                 const tIn = comp.state.temperature_in;
@@ -344,11 +363,11 @@ export function renderDiagram(keepControls = false) {
             }
         }
 
-        const key = `${colorHexStart}_${colorHexEnd}_${isIncluded}_${useGradient}`;
+        const key = `${colorHexStart}_${colorHexEnd}_${isGhosted}_${useGradient} `;
         if (!materialCache[key]) {
             const matParams = {
-                transparent: !isIncluded,
-                opacity: isIncluded ? 1.0 : 0.2,
+                transparent: isGhosted,
+                opacity: isGhosted ? 0.5 : 1.0,
                 roughness: 0.3,
                 metalness: 0.1
             };
@@ -676,7 +695,7 @@ export function renderDiagram(keepControls = false) {
             div.style.pointerEvents = 'none';
             div.style.whiteSpace = 'pre';
             div.style.textAlign = 'center';
-            div.innerText = `${endText}\n${flow} m³/h\n${temp.toFixed(1)} °C`;
+            div.innerText = `${endText} \n${flow} m³/h\n${temp.toFixed(1)} °C`;
             labelsContainer.appendChild(div);
             labelsMap.set(div, pos.clone().add(dir.clone().multiplyScalar(arrowLength + 15)));
         };
